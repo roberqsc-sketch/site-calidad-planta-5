@@ -2431,7 +2431,7 @@ function initScreenValidationForm() {
     const combinedBarcodes = barcodes.join(', ');
 
     submitButton.disabled = true;
-    submitButton.textContent = 'Guardando...';
+    submitButton.textContent = 'Enviando y guardando...';
     try {
       const images = await Promise.all(screenValidationImages.map(async file => {
         const dataUrl = await new Promise((resolve, reject) => {
@@ -2612,7 +2612,7 @@ function initScreenValidationForm() {
       setScreenValidationMessage(error.message || 'No se pudo guardar la validación. Revisá la conexión e intentá nuevamente.');
     } finally {
       submitButton.disabled = false;
-      submitButton.textContent = 'Guardar validación';
+      submitButton.textContent = 'Enviar mail y guardar validación';
     }
   });
 }
