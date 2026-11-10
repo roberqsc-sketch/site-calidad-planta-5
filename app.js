@@ -2501,7 +2501,7 @@ function initScreenValidationForm() {
               <div style="font-size:13px;font-weight:600;color:#1e293b;">${safeEsc(payload.lot)}</div>
             </td>
             <td width="50%" valign="top" style="padding-bottom:16px;">
-              <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;margin-bottom:4px;">Auditor / Responsable</div>
+              <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;margin-bottom:4px;">Responsable</div>
               <div style="font-size:13px;font-weight:600;color:#1e293b;">${safeEsc(payload.responsible)}</div>
             </td>
           </tr>
