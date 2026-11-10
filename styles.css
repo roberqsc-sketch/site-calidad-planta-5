@@ -1,0 +1,532 @@
+/* ============================================================
+   Site de Calidad Planta 5 (Producción de TV)
+   Diseño Limpio, Prolijo y Corporativo (Sidebar + Clean White Cards)
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --primary-red: #e30613;
+  --primary-red-hover: #bd0812;
+  --primary-light-red: #fff1f2;
+  --primary-red-border: #fecdd3;
+  --bg-main: #f8fafc;
+  --card-bg: #ffffff;
+  --card-border: #f1f5f9;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-main);
+  color: #1e293b;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Sidebar Nav Pills (Estilo idéntico a la referencia original) */
+.nav-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #64748b;
+  transition: all 0.15s ease-in-out;
+  cursor: pointer;
+  user-select: none;
+  width: 100%;
+}
+
+.nav-pill:hover {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+.nav-pill.active {
+  background-color: #ffe3e5;
+  color: #e30613;
+  font-weight: 600;
+}
+
+.nav-pill.active svg {
+  stroke: #e30613;
+}
+
+.nav-subitem {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.6rem;
+  color: #64748b;
+  font-size: 0.75rem;
+  text-align: left;
+  transition: all 0.15s ease-in-out;
+}
+
+.nav-subitem:hover {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+.nav-subitem.active {
+  background-color: #fff1f2;
+  color: #e30613;
+  font-weight: 600;
+}
+
+.nav-subitem.active svg {
+  stroke: #e30613;
+}
+
+/* Tarjeta Base Blanca Limpia */
+.clean-card {
+  background: #ffffff;
+  border: 1px solid #eef2f6;
+  border-radius: 1.25rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.02), 0 1px 2px -1px rgba(0, 0, 0, 0.03);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.clean-card:hover {
+  box-shadow: 0 10px 25px -4px rgba(15, 23, 42, 0.04), 0 4px 10px -2px rgba(15, 23, 42, 0.02);
+  border-color: #e2e8f0;
+}
+
+/* Tarjeta de Módulo Limpia (Blanca y Prolija) */
+.module-card {
+  background: #ffffff;
+  border: 1px solid #f1f5f9;
+  border-radius: 1.25rem;
+  padding: 1.5rem;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  overflow: hidden;
+}
+
+.module-card:hover {
+  transform: translateY(-3px);
+  border-color: #fecdd3;
+  box-shadow: 0 12px 28px -5px rgba(227, 6, 19, 0.06), 0 4px 10px -2px rgba(15, 23, 42, 0.03);
+}
+
+/* Pulse animation para live status */
+@keyframes softPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.9); }
+}
+
+.live-indicator {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  background-color: #10b981;
+  border-radius: 9999px;
+  animation: softPulse 2s infinite ease-in-out;
+}
+
+/* Modal backdrop blur */
+.modal-backdrop {
+  backdrop-filter: blur(5px);
+  background-color: rgba(15, 23, 42, 0.4);
+}
+
+/* Login Card */
+.login-card {
+  width: min(100%, 410px);
+}
+
+.login-screen {
+  display: grid;
+  grid-template-columns: minmax(390px, 0.78fr) minmax(0, 1.22fr);
+  overflow-y: auto;
+  background: #fff;
+}
+
+.login-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 48px clamp(28px, 6vw, 88px);
+  background: #fff;
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: clamp(48px, 9vh, 88px);
+}
+
+.login-brand-logo {
+  display: block;
+  width: 148px;
+  height: auto;
+  flex: 0 0 auto;
+}
+
+.login-heading {
+  margin-bottom: 30px;
+}
+
+.login-eyebrow,
+.login-quality-label {
+  color: #e30613;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+}
+
+.login-heading h3 {
+  margin-top: 9px;
+  color: #111827;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.login-heading > p:last-child {
+  margin-top: 7px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.login-footnote {
+  margin-top: 24px;
+  color: #94a3b8;
+  font-size: 11px;
+  text-align: center;
+}
+
+.login-screen #loginForm button[type="submit"] {
+  background-color: #e30613;
+  box-shadow: 0 8px 18px rgba(227, 6, 19, 0.2);
+}
+
+.login-screen #loginForm button[type="submit"]:hover {
+  background-color: #bd0812;
+}
+
+.login-screen #loginForm input:focus {
+  --tw-ring-color: #fb7185;
+}
+
+.login-visual-panel {
+  position: relative;
+  display: flex;
+  min-height: 100%;
+  align-items: center;
+  overflow: hidden;
+  padding: clamp(36px, 6vw, 88px);
+  background: #bd0812;
+  color: #fff;
+}
+
+.site-brand-logo {
+  display: block;
+  width: 128px;
+  height: auto;
+  flex: 0 0 auto;
+}
+
+#sidebar #sidebarBrand {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+#sidebar #sidebarBrand > div {
+  width: 100%;
+}
+
+#sidebar #sidebarBrand h1,
+#sidebar #sidebarBrand > div > div {
+  white-space: nowrap;
+}
+
+.login-hero-art,
+.login-visual-shade {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.login-hero-art {
+  object-fit: cover;
+}
+
+.login-visual-shade {
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.46), rgba(15, 23, 42, 0.1) 58%, rgba(15, 23, 42, 0.32));
+}
+
+.login-visual-copy {
+  position: relative;
+  z-index: 1;
+  max-width: 620px;
+  margin-top: -40px;
+  text-shadow: 0 2px 16px rgba(30, 5, 12, 0.2);
+}
+
+.login-visual-kicker {
+  display: inline-block;
+  margin-bottom: 18px;
+  color: #fff1f2;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.17em;
+}
+
+.login-visual-copy h2 {
+  font-size: clamp(32px, 4vw, 56px);
+  font-weight: 800;
+  letter-spacing: -0.055em;
+  line-height: 1.08;
+}
+
+.login-visual-copy p {
+  max-width: 440px;
+  margin-top: 18px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.login-visual-footer {
+  position: absolute;
+  right: clamp(28px, 4vw, 58px);
+  bottom: 24px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+.login-visual-footer span {
+  margin: 0 5px;
+  color: #fda4af;
+}
+
+@media (max-width: 800px) {
+  .login-screen {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(280px, 38vh);
+  }
+
+  .login-panel {
+    min-height: auto;
+    padding: 36px 24px;
+  }
+
+  .login-brand {
+    margin-bottom: 38px;
+  }
+
+  .login-brand-logo {
+    width: 132px;
+  }
+
+  .login-visual-panel {
+    min-height: 280px;
+    padding: 28px;
+  }
+
+  .login-visual-copy {
+    margin-top: -35px;
+  }
+
+  .login-visual-copy h2 {
+    font-size: clamp(26px, 7vw, 40px);
+  }
+
+  .login-visual-copy p {
+    max-width: 290px;
+    font-size: 12px;
+  }
+
+  #appContainer {
+    flex-direction: column;
+  }
+
+  #sidebar {
+    width: 100%;
+    min-height: auto;
+    padding: 10px 16px;
+    border-right: 0;
+    border-bottom: 1px solid #e2e8f0;
+    overflow-x: auto;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  #sidebar > div:first-child {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  #sidebar #sidebarBrand {
+    display: flex;
+    align-items: center;
+    flex-direction: row;
+    gap: 14px;
+    min-width: 0;
+    width: 100%;
+    margin-bottom: 0;
+    padding: 4px 2px;
+  }
+
+  #sidebar .site-brand-logo {
+    width: 116px;
+  }
+
+  #sidebar #sidebarBrand > div {
+    min-width: 0;
+    width: auto;
+    flex: 1 1 auto;
+  }
+
+  #sidebar #sidebarBrand h1 {
+    font-size: 14px;
+    white-space: nowrap;
+  }
+
+  #sidebar > div:first-child > div:not(#sidebarBrand) {
+    min-width: max-content;
+    margin-bottom: 0;
+  }
+
+  #sidebar > div:first-child > div:not(#sidebarBrand) > div:first-child {
+    display: none;
+  }
+
+  #sidebar nav {
+    display: flex;
+    gap: 2px;
+  }
+
+  #sidebar .nav-pill {
+    width: auto;
+    padding: 7px 9px;
+    white-space: nowrap;
+  }
+
+  #sidebar > div:last-child {
+    display: none;
+  }
+
+  #appContainer > div {
+    width: 100%;
+    min-width: 0;
+  }
+
+  #appContainer header {
+    padding: 12px 16px;
+  }
+
+  #appContainer main {
+    min-width: 0;
+    padding: 16px;
+  }
+
+  #appContainer header > div:first-child span:last-child {
+    display: none;
+  }
+
+}
+
+/* Tarjeta de Formularios & Checklists (Estilo limpio blanco corporativo) */
+.form-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 1.25rem;
+  padding: 1.35rem 1.4rem;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.02);
+}
+
+.form-card:hover {
+  transform: translateY(-2px);
+  border-color: #fda4af;
+  box-shadow: 0 12px 26px -4px rgba(227, 6, 19, 0.07), 0 4px 10px -2px rgba(15, 23, 42, 0.02);
+}
+
+.form-card.highlight-red {
+  border-color: #fecdd3;
+  background: linear-gradient(180deg, #fffafa 0%, #ffffff 100%);
+}
+
+.form-card.highlight-red:hover {
+  border-color: #e30613;
+}
+
+/* Badge de registros (ej. 19 reg, 815 reg) */
+.reg-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #475569;
+  background-color: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  padding: 0.2rem 0.55rem;
+  border-radius: 0.375rem;
+  letter-spacing: -0.01em;
+}
+
+/* Botón de acción circular '>' */
+.action-circle-btn {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  background-color: #f8fafc;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.form-card:hover .action-circle-btn {
+  background-color: #e30613;
+  color: #ffffff;
+  border-color: #e30613;
+  transform: translateX(2px);
+  box-shadow: 0 4px 10px rgba(227, 6, 19, 0.22);
+}
+
+.form-card.highlight-red .action-circle-btn {
+  background-color: #e30613;
+  color: #ffffff;
+  border-color: #e30613;
+}
