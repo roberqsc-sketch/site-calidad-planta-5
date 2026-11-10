@@ -256,7 +256,7 @@ const AppState = {
       id: 1,
       formKey: 'inicio_turno',
       formName: 'Checklist Inicio de Turno',
-      line: 'CELDA 1 (OLED 55")',
+      line: 'CELDA 1',
       auditor: 'Rober Quiquinlla',
       time: 'Hoy, 06:05',
       result: '5S & Arranque Conforme (100%)',
@@ -5498,11 +5498,11 @@ window.setAuditMissingFilter = function(filter) {
 
 const AuditReportLines = [
   { value: 'all', label: 'Comparativa' },
-  { value: 'CELDA 1 (OLED 55")', label: 'Celda 1' },
-  { value: 'CELDA 2 (QLED 65")', label: 'Celda 2' },
-  { value: 'LCD 6 (UHD 50")', label: 'LCD 6' },
-  { value: 'LCD 8 (FHD 43")', label: 'LCD 8' },
-  { value: 'CELDA 3 (HD 32")', label: 'Celda 3' },
+  { value: 'CELDA 1', label: 'Celda 1' },
+  { value: 'CELDA 2', label: 'Celda 2' },
+  { value: 'LCD 6', label: 'LCD 6' },
+  { value: 'LCD 8', label: 'LCD 8' },
+  { value: 'CELDA 3', label: 'Celda 3' },
   { value: 'INSERCIÓN PLACAS', label: 'Inserción Placas' },
   { value: 'INSERCIÓN MANUAL & JIG', label: 'Inserción Manual & JIG' }
 ];
@@ -5511,11 +5511,11 @@ let auditRadiographyConfig = { line: 'all', period: 'all', start: '', end: '', m
 
 function normalizeAuditReportLine(line) {
   const normalized = String(line || '').toLocaleUpperCase();
-  if (normalized.includes('CELDA 1')) return 'CELDA 1 (OLED 55")';
-  if (normalized.includes('CELDA 2')) return 'CELDA 2 (QLED 65")';
-  if (normalized.includes('LCD 6')) return 'LCD 6 (UHD 50")';
-  if (normalized.includes('LCD 8')) return 'LCD 8 (FHD 43")';
-  if (normalized.includes('CELDA 3')) return 'CELDA 3 (HD 32")';
+  if (normalized.includes('CELDA 1')) return 'CELDA 1';
+  if (normalized.includes('CELDA 2')) return 'CELDA 2';
+  if (normalized.includes('LCD 6')) return 'LCD 6';
+  if (normalized.includes('LCD 8')) return 'LCD 8';
+  if (normalized.includes('CELDA 3')) return 'CELDA 3';
   if (normalized.includes('INSERCIÓN PLACA') || normalized.includes('JIG PLACA')) return 'INSERCIÓN PLACAS';
   if (normalized.includes('INSERCIÓN MANUAL') || normalized.includes('IM-1') || normalized.includes('IM-2') || normalized.includes('INSERCIÓN MANUAL & JIG')) {
     return 'INSERCIÓN MANUAL & JIG';
@@ -5525,17 +5525,14 @@ function normalizeAuditReportLine(line) {
 
 function getCleanLineLabel(line) {
   const norm = normalizeAuditReportLine(line);
-  const found = AuditReportLines.find(l => l.value === norm);
-  if (found && found.value !== 'all') return found.label;
-  const s = String(line || '');
-  if (/celda\s*1/i.test(s)) return 'Celda 1';
-  if (/celda\s*2/i.test(s)) return 'Celda 2';
-  if (/celda\s*3/i.test(s)) return 'Celda 3';
-  if (/lcd\s*6/i.test(s)) return 'LCD 6';
-  if (/lcd\s*8/i.test(s)) return 'LCD 8';
-  if (/inserci[oó]n\s*placa/i.test(s)) return 'Inserción Placas';
-  if (/inserci[oó]n\s*manual/i.test(s) || /im-[12]/i.test(s)) return 'Inserción Manual & JIG';
-  return line || 'Sin línea';
+  if (norm === 'CELDA 1') return 'Celda 1';
+  if (norm === 'CELDA 2') return 'Celda 2';
+  if (norm === 'CELDA 3') return 'Celda 3';
+  if (norm === 'LCD 6') return 'LCD 6';
+  if (norm === 'LCD 8') return 'LCD 8';
+  if (norm === 'INSERCIÓN PLACAS') return 'Inserción Placas';
+  if (norm === 'INSERCIÓN MANUAL & JIG') return 'Inserción Manual & JIG';
+  return norm || line || 'Sin línea';
 }
 
 function getAuditReportDateRange(period, start, end) {
@@ -7001,11 +6998,11 @@ const FormDefinitions = {
               Línea <span class="text-red-500">*</span>
             </label>
             <select id="fieldTorqueLine" class="w-full px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-slate-800 text-xs font-medium focus:ring-2 focus:ring-red-400 focus:outline-none">
-              <option value="CELDA 1 (OLED 55&quot;)">Celda 1 OLED</option>
-              <option value="CELDA 2 (QLED 65&quot;)">Celda 2 QLED</option>
-              <option value="LCD 6 (UHD 50&quot;)">LCD 6</option>
-              <option value="LCD 8 (FHD 43&quot;)">LCD 8</option>
-              <option value="CELDA 3 (HD 32&quot;)">Celda 3</option>
+              <option value="CELDA 1">Celda 1</option>
+              <option value="CELDA 2">Celda 2</option>
+              <option value="LCD 6">LCD 6</option>
+              <option value="LCD 8">LCD 8</option>
+              <option value="CELDA 3">Celda 3</option>
               <option value="INSERCIÓN PLACAS">Inserción Placas</option>
               <option value="INSERCIÓN MANUAL &amp; JIG">Inserción Manual &amp; JIG</option>
             </select>
@@ -7184,11 +7181,11 @@ const FormDefinitions = {
               Línea <span class="text-red-500">*</span>
             </label>
             <select id="fieldEsdLine" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-800 font-medium focus:ring-2 focus:ring-red-400 focus:outline-none">
-              <option value="CELDA 1 (OLED 55&quot;)">Celda 1 OLED</option>
-              <option value="CELDA 2 (QLED 65&quot;)">Celda 2 QLED</option>
-              <option value="LCD 6 (UHD 50&quot;)">LCD 6</option>
-              <option value="LCD 8 (FHD 43&quot;)">LCD 8</option>
-              <option value="CELDA 3 (HD 32&quot;)">Celda 3</option>
+              <option value="CELDA 1">Celda 1</option>
+              <option value="CELDA 2">Celda 2</option>
+              <option value="LCD 6">LCD 6</option>
+              <option value="LCD 8">LCD 8</option>
+              <option value="CELDA 3">Celda 3</option>
               <option value="INSERCIÓN PLACAS">Inserción Placas</option>
               <option value="INSERCIÓN MANUAL &amp; JIG">Inserción Manual &amp; JIG</option>
             </select>
@@ -8303,7 +8300,7 @@ window.openAuditFullscreen = function(auditType) {
 
 window.handleTorqueFullscreenSubmit = function(e) {
   if (e) e.preventDefault();
-  const line = document.getElementById('fsTorqueLine')?.value || 'CELDA 1 (OLED 55")';
+  const line = document.getElementById('fsTorqueLine')?.value || 'CELDA 1';
   const auditor = document.getElementById('fsTorqueAuditor')?.value || (AppState.currentUser ? AppState.currentUser.fullName : 'Rober Quiquinlla');
   const model = document.getElementById('fsTorqueModel')?.value || '91DB50X3510';
   const ngItems = collectTorqueNgItems();
@@ -8348,7 +8345,7 @@ window.handleTorqueFullscreenSubmit = function(e) {
 
 window.handleEsdFullscreenSubmit = function(e) {
   if (e) e.preventDefault();
-  const line = document.getElementById('fsEsdLine')?.value || 'CELDA 1 (OLED 55")';
+  const line = document.getElementById('fsEsdLine')?.value || 'CELDA 1';
   const auditor = document.getElementById('fsEsdAuditor')?.value || (AppState.currentUser ? AppState.currentUser.fullName : 'Rober Quiquinlla');
   const model = document.getElementById('fsEsdModel')?.value || '91DB50X3510';
   const ngItems = collectEsdNgItems();
@@ -8551,11 +8548,11 @@ async function handleFormularioSubmit() {
   let ngItems = [];
 
   if (formKey === 'esd') {
-    line = document.getElementById('fieldEsdLine')?.value || 'CELDA 1 (OLED 55")';
+    line = document.getElementById('fieldEsdLine')?.value || 'CELDA 1';
     auditor = document.getElementById('fieldEsdAuditor')?.value || 'Rober Quiquinlla';
     ngItems = collectEsdNgItems();
   } else if (formKey === 'torque') {
-    line = document.getElementById('fieldTorqueLine')?.value || 'CELDA 1 (OLED 55")';
+    line = document.getElementById('fieldTorqueLine')?.value || 'CELDA 1';
     auditor = document.getElementById('fieldTorqueAuditor')?.value || 'Rober Quiquinlla';
     ngItems = collectTorqueNgItems();
   } else if (formKey === 'im_cambio') {
@@ -8591,7 +8588,7 @@ async function handleFormularioSubmit() {
   } else {
     line = formKey === 'im_diario'
       ? (document.getElementById('fieldImLine')?.value || 'INSERCIÓN MANUAL & JIG')
-      : (document.getElementById('modalFormLineSelect')?.value || 'CELDA 1 (OLED 55")');
+      : (document.getElementById('modalFormLineSelect')?.value || 'CELDA 1');
     auditor = document.getElementById('modalFormAuditorInput')?.value || (AppState.currentUser ? AppState.currentUser.fullName : 'Rober Quiquinlla');
     ngItems = Array.from(document.querySelectorAll('#modalFormDynamicFields input[type="checkbox"]:not(:checked)'))
       .map(input => input.closest('label')?.querySelector('span')?.textContent?.trim())
@@ -8916,12 +8913,12 @@ window.openLineAuditorModal = async function() {
 
     // Líneas a configurar
     const targetLines = [
-      { code: 'LCD 6', name: 'LCD 6 (UHD 50")', color: 'sky' },
-      { code: 'LCD 8', name: 'LCD 8 (FHD 43")', color: 'blue' },
-      { code: 'CELDA 2', name: 'CELDA 2 (QLED 65")', color: 'amber' },
-      { code: 'CELDA 3', name: 'CELDA 3 (HD 32")', color: 'emerald' },
+      { code: 'LCD 6', name: 'LCD 6', color: 'sky' },
+      { code: 'LCD 8', name: 'LCD 8', color: 'blue' },
+      { code: 'CELDA 2', name: 'CELDA 2', color: 'amber' },
+      { code: 'CELDA 3', name: 'CELDA 3', color: 'emerald' },
       { code: 'INSERCIÓN MANUAL & JIG', name: 'INSERCIÓN MANUAL & JIG', color: 'orange' },
-      { code: 'CELDA 1', name: 'CELDA 1 (OLED 55")', color: 'rose' },
+      { code: 'CELDA 1', name: 'CELDA 1', color: 'rose' },
       { code: 'INSERCIÓN PLACAS', name: 'INSERCIÓN PLACAS', color: 'purple' }
     ];
 
@@ -8940,7 +8937,6 @@ window.openLineAuditorModal = async function() {
           <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-black bg-white border border-slate-200 text-slate-800 shadow-2xs">
             ${line.code}
           </span>
-          <span class="text-xs text-slate-500 font-medium">${line.name}</span>
         </div>
       `;
       card.appendChild(titleRow);
