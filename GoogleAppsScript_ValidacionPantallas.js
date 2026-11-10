@@ -4,17 +4,25 @@
  * Vinculado a la planilla oficial de Google Sheets:
  * https://docs.google.com/spreadsheets/d/1RdQDItzlz2T_OT-D_DVZ38SrZbLwWuK8IJTFD5XQcoE/edit?gid=0#gid=0
  * 
- * CARACTERÍSTICAS:
- * - Guarda las fotos en Google Drive (carpeta "Evidencias Validación Pantallas").
- * - Crea enlaces azules clicables (Foto 1, Foto 2, etc.) en la columna "Evidencias" (Columna H).
- * - Envía correo con diseño ejecutivo minimalista y fotos adjuntas.
- * 
- * PASOS PARA ACTUALIZAR EN TU GOOGLE SHEETS:
- * 1. Abrí tu planilla: https://docs.google.com/spreadsheets/d/1RdQDItzlz2T_OT-D_DVZ38SrZbLwWuK8IJTFD5XQcoE/edit
- * 2. En el menú superior hacé clic en: Extensiones > Apps Script
- * 3. En Código.gs reemplazá todo el código por este bloque completo.
- * 4. Hacé clic en: Implementar > Gestionar implementaciones > Editar (icono lápiz) > Versión: "Nueva versión" > Implementar.
+ * =========================================================================
+ * IMPORTANTE: PARA QUE GOOGLE PERMITA GUARDAR FOTOS EN DRIVE Y GENERAR LINKS:
+ * 1. Pegá este código en Código.gs
+ * 2. Arriba en la barra de herramientas, donde dice "doPost", cambialo por:
+ *    "autorizarPermisosDrive"
+ * 3. Hacé clic en "Ejecutar" (el botón con triángulo ▶).
+ * 4. Google te va a mostrar una ventana: "Se requiere autorización".
+ *    Hacé clic en: "Revisar permisos" > Elegí tu cuenta > "Configuración avanzada" > "Ir a ... (no seguro)" > "Permitir".
+ * 5. Hacé clic en: Implementar > Gestionar implementaciones > Editar (ícono lápiz) > Versión: "Nueva versión" > Implementar.
+ * =========================================================================
  */
+
+// Función para autorizar los permisos de Drive una sola vez
+function autorizarPermisosDrive() {
+  var folderName = "Evidencias Validación Pantallas";
+  var folders = DriveApp.getFoldersByName(folderName);
+  var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+  Logger.log("Permisos de Drive autorizados correctamente. Carpeta ID: " + folder.getId());
+}
 
 function doPost(e) {
   try {
@@ -36,14 +44,23 @@ function doPost(e) {
     }
     var barcodesUnidos = barcodes.length > 0 ? barcodes.join(', ') : (data.barcode || '');
 
-    // 4. Guardar imágenes en Google Drive y crear enlaces azules
+    // 4. Procesar imágenes y guardar en Google Drive
     var attachments = [];
     var photoLinks = [];
+    var imagenesCount = 0;
+
     if (data.images && Array.isArray(data.images) && data.images.length > 0) {
-      // Buscar o crear carpeta en Drive para almacenar las fotos
-      var folderName = "Evidencias Validación Pantallas";
-      var folders = DriveApp.getFoldersByName(folderName);
-      var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+      imagenesCount = data.images.length;
+      var driveFolder = null;
+
+      // Intentar acceder o crear la carpeta en Drive
+      try {
+        var folderName = "Evidencias Validación Pantallas";
+        var folders = DriveApp.getFoldersByName(folderName);
+        driveFolder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+      } catch (driveInitErr) {
+        console.warn('Aviso: Permisos de Drive pendientes. Ejecutar autorizarPermisosDrive(): ' + driveInitErr);
+      }
 
       for (var i = 0; i < data.images.length; i++) {
         var img = data.images[i];
@@ -56,26 +73,32 @@ function doPost(e) {
             var bytes = Utilities.base64Decode(base64Data);
             var safeName = (data.model || 'pantalla') + '_' + (barcodes[i] || ('serial_' + (i + 1))) + '_' + (i + 1) + '.jpg';
             var blob = Utilities.newBlob(bytes, mimeType, img.name || safeName);
-            
-            // Crear archivo en Drive y habilitar visualización
-            var file = folder.createFile(blob);
-            try {
-              file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-            } catch (shareErr) {
-              console.warn('Permiso público no aplicado: ' + shareErr);
-            }
-            
-            var fileUrl = file.getUrl();
-            photoLinks.push({ label: 'Foto ' + (i + 1), url: fileUrl });
             attachments.push(blob);
+
+            // Si Drive está disponible, guardar el archivo
+            if (driveFolder) {
+              try {
+                var file = driveFolder.createFile(blob);
+                try {
+                  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+                } catch (shareErr) {}
+                photoLinks.push({ label: 'Foto ' + (i + 1), url: file.getUrl() });
+              } catch (fileErr) {
+                console.warn('No se pudo crear archivo en Drive: ' + fileErr);
+              }
+            }
           } catch (errImg) {
-            console.warn('Error al guardar imagen en Drive: ' + errImg);
+            console.warn('Error al decodificar imagen: ' + errImg);
           }
         }
       }
     }
 
-    // 5. Guardar la fila en Google Sheets
+    var evidenciasTexto = photoLinks.length > 0 
+      ? '' 
+      : (imagenesCount > 0 ? (imagenesCount + ' foto(s)') : '—');
+
+    // 5. Guardar la fila en Google Sheets (SIEMPRE se guarda, nunca se bloquea)
     // Columnas: Fecha (A), Responsable (B), Línea (C), Modelo (D), Código de Barras (E), Lote (F), Observaciones (G), Evidencias (H)
     sheet.appendRow([
       fechaStr,
@@ -85,30 +108,34 @@ function doPost(e) {
       barcodesUnidos,
       data.lot || '',
       data.observations || '',
-      photoLinks.length > 0 ? '' : '—'
+      evidenciasTexto
     ]);
 
     var newRow = sheet.getLastRow();
 
-    // 5.1 Si hay fotos, construir los enlaces clicables de color azul en la columna H (Evidencias)
+    // 5.1 Si se subieron fotos a Drive, construir los enlaces clicables de color azul en la columna H (Evidencias)
     if (photoLinks.length > 0) {
-      var cell = sheet.getRange(newRow, 8); // Columna H = 8
-      var fullText = "";
-      var linkRanges = [];
+      try {
+        var cell = sheet.getRange(newRow, 8); // Columna H = 8
+        var fullText = "";
+        var linkRanges = [];
 
-      for (var k = 0; k < photoLinks.length; k++) {
-        var prefix = k > 0 ? "   " : "";
-        var startIdx = fullText.length + prefix.length;
-        fullText += prefix + photoLinks[k].label;
-        var endIdx = fullText.length;
-        linkRanges.push({ start: startIdx, end: endIdx, url: photoLinks[k].url });
-      }
+        for (var k = 0; k < photoLinks.length; k++) {
+          var prefix = k > 0 ? "   " : "";
+          var startIdx = fullText.length + prefix.length;
+          fullText += prefix + photoLinks[k].label;
+          var endIdx = fullText.length;
+          linkRanges.push({ start: startIdx, end: endIdx, url: photoLinks[k].url });
+        }
 
-      var richTextBuilder = SpreadsheetApp.newRichTextValue().setText(fullText);
-      for (var r = 0; r < linkRanges.length; r++) {
-        richTextBuilder.setLinkUrl(linkRanges[r].start, linkRanges[r].end, linkRanges[r].url);
+        var richTextBuilder = SpreadsheetApp.newRichTextValue().setText(fullText);
+        for (var r = 0; r < linkRanges.length; r++) {
+          richTextBuilder.setLinkUrl(linkRanges[r].start, linkRanges[r].end, linkRanges[r].url);
+        }
+        cell.setRichTextValue(richTextBuilder.build());
+      } catch (richErr) {
+        console.warn('No se pudo aplicar RichText: ' + richErr);
       }
-      cell.setRichTextValue(richTextBuilder.build());
     }
 
     // 6. Generar el correo con diseño ejecutivo minimalista
@@ -197,7 +224,7 @@ function doPost(e) {
         '          <tr>' +
         '            <td colspan="2" valign="top">' +
         '              <div style="display:inline-flex;align-items:center;padding:7px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;color:#475569;">' +
-        '                📎 <strong style="margin-left:6px;margin-right:4px;color:#1e293b;">' + photoLinks.length + '</strong> archivo(s) de imagen adjunto(s)' +
+        '                📎 <strong style="margin-left:6px;margin-right:4px;color:#1e293b;">' + attachments.length + '</strong> archivo(s) de imagen adjunto(s)' +
         '              </div>' +
         '              ' + driveLinksHtml +
         '            </td>' +
