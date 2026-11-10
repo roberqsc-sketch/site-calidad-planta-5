@@ -57,10 +57,7 @@ DEFAULT_ACCOUNTS = [
      '1669ca6351af33c7b8ad8c114487c987b2cf3b0db5298981def9536a03841941'),
     ('daniela', 'Daniela Suarez', 'DS', 'Auditora Mainboard & Hi-Pot', 'Turno 1 - Mañana',
      'bg-purple-600', 0, 'cf544d47ad6e1025dffc3e433906f45e',
-     '867049b30bc334322bc2f1d2f8083c626297a43909192914eab8f43f1c262e26'),
-    ('mario', 'Mario Barrios', 'MB', 'Inspector de Calibración Óptica', 'Turno 2 - Tarde',
-     'bg-emerald-600', 0, '8a44d8d5ce372c245b5ff09b38d64cee',
-     '09ea9d6319f4c7aaed53d778977d3d15a06ace5c4c8c6267db23be6c669ba827')
+     '867049b30bc334322bc2f1d2f8083c626297a43909192914eab8f43f1c262e26')
 ]
 MDR_SHEET_CSV_URL = (
     'https://docs.google.com/spreadsheets/d/'
@@ -1168,6 +1165,80 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not self.get_authenticated_user():
                 return
             self.send_scrap_screen_disposals()
+            return
+        if path == '/api/line-auditors':
+            if not self.get_authenticated_user():
+                return
+            with self.database() as connection:
+                connection.execute('''
+                    CREATE TABLE IF NOT EXISTS line_auditor_assignments (
+                        line_code TEXT PRIMARY KEY,
+                        auditor1_name TEXT NOT NULL DEFAULT '',
+                        auditor1_email TEXT NOT NULL DEFAULT '',
+                        auditor2_name TEXT NOT NULL DEFAULT '',
+                        auditor2_email TEXT NOT NULL DEFAULT '',
+                        updated_at INTEGER NOT NULL
+                    )
+                ''')
+                rows = connection.execute(
+                    'SELECT line_code, auditor1_name, auditor1_email, auditor2_name, auditor2_email, updated_at '
+                    'FROM line_auditor_assignments'
+                ).fetchall()
+            self.send_json(200, {
+                'assignments': [
+                    {
+                        'lineCode': row['line_code'],
+                        'auditor1Name': row['auditor1_name'],
+                        'auditor1Email': row['auditor1_email'],
+                        'auditor2Name': row['auditor2_name'],
+                        'auditor2Email': row['auditor2_email'],
+                        'updatedAt': row['updated_at']
+                    }
+                    for row in rows
+                ]
+            })
+            return
+        if path == '/api/line-auditors':
+            if not self.require_same_origin() or not self.require_admin():
+                return
+            body = self.read_json_body()
+            if body is None:
+                return
+            assignments = body.get('assignments', [])
+            if not isinstance(assignments, list):
+                self.send_json(400, {'error': 'Formato de asignaciones inválido.'})
+                return
+            now = int(time.time())
+            with self.database() as connection:
+                connection.execute('''
+                    CREATE TABLE IF NOT EXISTS line_auditor_assignments (
+                        line_code TEXT PRIMARY KEY,
+                        auditor1_name TEXT NOT NULL DEFAULT '',
+                        auditor1_email TEXT NOT NULL DEFAULT '',
+                        auditor2_name TEXT NOT NULL DEFAULT '',
+                        auditor2_email TEXT NOT NULL DEFAULT '',
+                        updated_at INTEGER NOT NULL
+                    )
+                ''')
+                for item in assignments:
+                    line_code = str(item.get('lineCode', '')).strip()
+                    if not line_code:
+                        continue
+                    a1_name = str(item.get('auditor1Name', '')).strip()
+                    a1_email = str(item.get('auditor1Email', '')).strip()
+                    a2_name = str(item.get('auditor2Name', '')).strip()
+                    a2_email = str(item.get('auditor2Email', '')).strip()
+                    connection.execute('''
+                        INSERT INTO line_auditor_assignments (line_code, auditor1_name, auditor1_email, auditor2_name, auditor2_email, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(line_code) DO UPDATE SET
+                            auditor1_name = excluded.auditor1_name,
+                            auditor1_email = excluded.auditor1_email,
+                            auditor2_name = excluded.auditor2_name,
+                            auditor2_email = excluded.auditor2_email,
+                            updated_at = excluded.updated_at
+                    ''', (line_code, a1_name, a1_email, a2_name, a2_email, now))
+            self.send_json(200, {'ok': True})
             return
         if path == '/api/quality-team':
             if not self.get_authenticated_user():

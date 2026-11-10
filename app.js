@@ -96,9 +96,10 @@ const AppState = {
       subfamily: 'QLED Serie 8 - Local Dimming',
       turno: 'mañana',
       shiftName: 'Turno 1 - Mañana',
+      dailyAuditors: [],
       checklist: { status: 'ok', time: '06:00', auditor: 'M. Rios' },
-      auditoria1: { name: 'Lucia Castronuovo', time: '07:45', status: 'ok', role: 'Auditor Panel' },
-      auditoria2: { name: 'Mario Barrios', time: '08:30', status: 'ok', role: 'Auditor Main' },
+      auditoria1: { name: 'Asignando...', time: '--:--', status: 'pending', role: 'Auditor Panel' },
+      auditoria2: { name: 'Asignando...', time: '--:--', status: 'pending', role: 'Auditor Main' },
       stations: {
         hipot: { status: 'ok', val: '0.3', tooltip: 'Fuga 0.3mA - Conforme' },
         openCell: { status: 'ok', val: '0.3', tooltip: 'Backlight uniforme' },
@@ -147,7 +148,7 @@ const AppState = {
       shiftName: 'Turno 1 - Mañana',
       dailyAuditors: [{ name: 'Cristian Ramírez', email: 'cristian.ramirez@newsan.com.ar' }],
       checklist: { status: 'ok', time: '06:12', auditor: 'E. Gimenez' },
-      auditoria1: { name: 'Mario Barrios', time: '08:10', status: 'ok', role: 'Auditor Panel' },
+      auditoria1: { name: 'Cristian Ramírez', time: '08:10', status: 'ok', role: 'Auditor Panel' },
       auditoria2: { name: 'Lucas Gomez', time: '08:40', status: 'ok', role: 'Auditor Main' },
       stations: {
         hipot: { status: 'ok', val: 'OK', tooltip: 'Aislamiento 3.0kV superado' },
@@ -197,7 +198,7 @@ const AppState = {
       shiftName: 'Turno 1 - Mañana',
       checklist: { status: 'ok', time: '06:20', auditor: 'R. Quiquinlla' },
       auditoria1: { name: 'Azul Son', time: '08:25', status: 'ok', role: 'Auditor Panel' },
-      auditoria2: { name: 'Lucia Castronuovo', time: '09:05', status: 'ok', role: 'Auditor Main' },
+      auditoria2: { name: 'Azul Son', time: '09:05', status: 'ok', role: 'Auditor Main' },
       stations: {
         hipot: { status: 'ok', val: '0.2', tooltip: 'Excelente rigidez' },
         openCell: { status: 'ok', val: '0.1', tooltip: 'Panel MiniLED zero clouding' },
@@ -311,7 +312,7 @@ const AppState = {
       formKey: 'im_cambio',
       formName: 'Checklist Cambio Modelo I.M & JIG',
       line: 'INSERCIÓN PLACAS',
-      auditor: 'Mario Barrios',
+      auditor: 'Cristian Ramírez',
       time: 'Hoy, 09:00',
       result: 'Máscara MB-RTK-9821 Ajustada',
       status: 'Aprobado',
@@ -6699,9 +6700,17 @@ function renderDashboardOverview() {
     lineCell.className = 'sticky left-0 z-[1] border-r border-slate-100 bg-white px-3 py-3 text-left text-xs font-bold text-slate-800';
     const lineName = document.createElement('div');
     lineName.textContent = line.lineCode;
-    const dailyAuditors = line.dailyAuditors || [line.auditoria1, line.auditoria2]
-      .filter(auditor => auditor?.name && auditor.name !== 'Asignando...')
-      .map(auditor => ({ name: auditor.name }));
+    // Obtener auditores asignados dinámicamente desde el servidor/estado
+    const assignment = Array.isArray(AppState.lineAuditorAssignments)
+      ? AppState.lineAuditorAssignments.find(a => a.lineCode === line.lineCode)
+      : null;
+    let dailyAuditors = [];
+    if (assignment) {
+      if (assignment.auditor1Name) dailyAuditors.push({ name: assignment.auditor1Name, email: assignment.auditor1Email });
+      if (assignment.auditor2Name) dailyAuditors.push({ name: assignment.auditor2Name, email: assignment.auditor2Email });
+    } else if (Array.isArray(line.dailyAuditors) && line.dailyAuditors.length) {
+      dailyAuditors = line.dailyAuditors;
+    }
     const lineResponsibles = document.createElement('div');
     lineResponsibles.className = 'mt-1 space-y-0.5 text-[10px] font-normal leading-tight text-slate-500';
     if (dailyAuditors.length) {
@@ -6718,6 +6727,11 @@ function renderDashboardOverview() {
         }
         lineResponsibles.appendChild(responsible);
       });
+    } else {
+      const noAuditor = document.createElement('div');
+      noAuditor.className = 'text-[10px] text-slate-400 italic';
+      noAuditor.textContent = 'Sin auditor asignado';
+      lineResponsibles.appendChild(noAuditor);
     } else {
       lineResponsibles.textContent = 'Responsables: por asignar';
     }
@@ -7043,7 +7057,7 @@ const FormDefinitions = {
               <select id="fieldTorqueSupervisor" class="w-full pl-7 pr-2.5 py-2 bg-white border border-slate-200 rounded-lg text-slate-800 text-xs font-medium focus:ring-2 focus:ring-red-400 focus:outline-none">
                 <option value="Soledad Romano">Soledad Romano</option>
                 <option value="Rober Quiquinlla">Rober Quiquinlla</option>
-                <option value="Mario Barrios">Mario Barrios</option>
+                
                 <option value="Cristian V.">Cristian V.</option>
               </select>
             </div>
@@ -7224,7 +7238,7 @@ const FormDefinitions = {
               <select id="fieldEsdSupervisor" class="w-full pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-800 font-medium focus:ring-2 focus:ring-red-400 focus:outline-none">
                 <option value="Rober Quiquinlla">Rober Quiquinlla</option>
                 <option value="Soledad Romano">Soledad Romano</option>
-                <option value="Mario Barrios">Mario Barrios</option>
+                
                 <option value="Cristian V.">Cristian V.</option>
               </select>
             </div>
@@ -8880,5 +8894,177 @@ window.deleteScreenValidationRecord = async function(id) {
   } catch (err) {
     console.error('Error al eliminar validación:', err);
     alert(err.message || 'No se pudo eliminar el registro.');
+  }
+};
+
+
+// ==========================================
+// ASIGNACIÓN DE LÍNEAS A AUDITORES
+// ==========================================
+
+async function loadLineAuditorAssignments() {
+  try {
+    const res = await requestAuthApi('/api/line-auditors');
+    if (res && Array.isArray(res.assignments)) {
+      AppState.lineAuditorAssignments = res.assignments;
+      return res.assignments;
+    }
+  } catch (err) {
+    console.warn('No se pudieron cargar asignaciones de auditores desde el servidor:', err);
+  }
+  return AppState.lineAuditorAssignments || [];
+}
+
+window.openLineAuditorModal = async function() {
+  const modal = document.getElementById('lineAuditorModal');
+  const body = document.getElementById('lineAuditorModalBody');
+  if (!modal || !body) return;
+
+  modal.classList.remove('hidden');
+  body.innerHTML = '<div class="text-center py-6 text-slate-400 text-xs">Cargando equipo de calidad y asignaciones...</div>';
+
+  try {
+    // Cargar asignaciones y equipo de calidad
+    const [assignmentsRes, teamRes] = await Promise.all([
+      requestAuthApi('/api/line-auditors').catch(() => ({ assignments: [] })),
+      requestAuthApi('/api/quality-team').catch(() => ({ members: [] }))
+    ]);
+
+    const assignments = assignmentsRes.assignments || AppState.lineAuditorAssignments || [];
+    const members = teamRes.members || [];
+    AppState.lineAuditorAssignments = assignments;
+
+    // Líneas a configurar
+    const targetLines = [
+      { code: 'LCD 6', name: 'LCD 6 (UHD 50")', color: 'sky' },
+      { code: 'LCD 8', name: 'LCD 8 (FHD 43")', color: 'blue' },
+      { code: 'CELDA 2', name: 'CELDA 2 (QLED 65")', color: 'amber' },
+      { code: 'CELDA 3', name: 'CELDA 3 (HD 32")', color: 'emerald' },
+      { code: 'INSERCIÓN MANUAL & JIG', name: 'INSERCIÓN MANUAL & JIG', color: 'orange' },
+      { code: 'CELDA 1', name: 'CELDA 1 (OLED 55")', color: 'rose' },
+      { code: 'INSERCIÓN PLACAS', name: 'INSERCIÓN PLACAS', color: 'purple' }
+    ];
+
+    body.innerHTML = '';
+
+    targetLines.forEach(line => {
+      const current = assignments.find(a => a.lineCode === line.code) || {};
+      const card = document.createElement('div');
+      card.className = 'rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3';
+      card.dataset.lineCode = line.code;
+
+      const titleRow = document.createElement('div');
+      titleRow.className = 'flex items-center justify-between';
+      titleRow.innerHTML = `
+        <div class="flex items-center gap-2">
+          <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-black bg-white border border-slate-200 text-slate-800 shadow-2xs">
+            ${line.code}
+          </span>
+          <span class="text-xs text-slate-500 font-medium">${line.name}</span>
+        </div>
+      `;
+      card.appendChild(titleRow);
+
+      const selectorsGrid = document.createElement('div');
+      selectorsGrid.className = 'grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1';
+
+      // Dropdown Auditor 1
+      const a1Col = document.createElement('div');
+      a1Col.innerHTML = `
+        <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">Auditor 1 (Principal)</label>
+        <select class="line-auditor-select-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 font-medium focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-200">
+          <option value="">— Sin auditor asignado —</option>
+          ${members.map(m => `
+            <option value="${m.fullName}" data-email="${m.email || ''}" ${current.auditor1Name === m.fullName ? 'selected' : ''}>
+              ${m.fullName} ${m.sector ? '(' + m.sector.split('·')[0].trim() + ')' : ''}
+            </option>
+          `).join('')}
+        </select>
+      `;
+      selectorsGrid.appendChild(a1Col);
+
+      // Dropdown Auditor 2
+      const a2Col = document.createElement('div');
+      a2Col.innerHTML = `
+        <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">Auditor 2 (Apoyo / Opcional)</label>
+        <select class="line-auditor-select-2 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 font-medium focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-200">
+          <option value="">— Ninguno —</option>
+          ${members.map(m => `
+            <option value="${m.fullName}" data-email="${m.email || ''}" ${current.auditor2Name === m.fullName ? 'selected' : ''}>
+              ${m.fullName} ${m.sector ? '(' + m.sector.split('·')[0].trim() + ')' : ''}
+            </option>
+          `).join('')}
+        </select>
+      `;
+      selectorsGrid.appendChild(a2Col);
+
+      card.appendChild(selectorsGrid);
+      body.appendChild(card);
+    });
+
+  } catch (err) {
+    console.error('Error al abrir modal de asignación de auditores:', err);
+    body.innerHTML = '<div class="p-4 text-center text-xs text-red-600 bg-red-50 rounded-lg">Error al cargar datos. Verificá la conexión con el servidor.</div>';
+  }
+};
+
+window.closeLineAuditorModal = function() {
+  const modal = document.getElementById('lineAuditorModal');
+  if (modal) modal.classList.add('hidden');
+};
+
+window.saveLineAuditorAssignments = async function() {
+  const saveBtn = document.getElementById('btnSaveLineAuditorModal');
+  const cards = document.querySelectorAll('#lineAuditorModalBody [data-line-code]');
+  if (!cards.length) return;
+
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Guardando...';
+  }
+
+  const assignments = [];
+  cards.forEach(card => {
+    const lineCode = card.dataset.lineCode;
+    const s1 = card.querySelector('.line-auditor-select-1');
+    const s2 = card.querySelector('.line-auditor-select-2');
+
+    const opt1 = s1?.selectedOptions?.[0];
+    const opt2 = s2?.selectedOptions?.[0];
+
+    const a1Name = s1?.value || '';
+    const a1Email = opt1?.dataset?.email || '';
+
+    const a2Name = s2?.value || '';
+    const a2Email = opt2?.dataset?.email || '';
+
+    assignments.push({
+      lineCode,
+      auditor1Name: a1Name,
+      auditor1Email: a1Email,
+      auditor2Name: a2Name,
+      auditor2Email: a2Email
+    });
+  });
+
+  try {
+    await requestAuthApi('/api/line-auditors', {
+      method: 'POST',
+      body: JSON.stringify({ assignments })
+    });
+
+    AppState.lineAuditorAssignments = assignments;
+    window.closeLineAuditorModal();
+    showToast('✓ Asignaciones de auditores guardadas correctamente.', 'success');
+    await loadLineAuditorAssignments();
+  renderWeeklyMatrix();
+  } catch (err) {
+    console.error('Error al guardar asignaciones de auditores:', err);
+    alert('No se pudieron guardar las asignaciones: ' + (err.message || 'Error de servidor'));
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Guardar asignaciones';
+    }
   }
 };
