@@ -2665,6 +2665,18 @@ async function loadScreenValidationRecords() {
       creatorCell.className = 'py-2 text-slate-700';
       creatorCell.textContent = record.createdBy;
       row.appendChild(creatorCell);
+
+      const actionCell = document.createElement('td');
+      actionCell.className = 'py-2 text-right pr-2';
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.title = 'Eliminar registro';
+      deleteBtn.className = 'inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors';
+      deleteBtn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>';
+      deleteBtn.onclick = () => window.deleteScreenValidationRecord(record.id);
+      actionCell.appendChild(deleteBtn);
+      row.appendChild(actionCell);
+
       tableBody.appendChild(row);
     });
     status.textContent = response.records.length
@@ -8854,5 +8866,19 @@ window.exportAuditReportPdf = function() {
     });
   } else {
     window.print();
+  }
+};
+
+window.deleteScreenValidationRecord = async function(id) {
+  if (!confirm('¿Estás seguro de que deseás eliminar este registro de validación?')) return;
+  try {
+    const res = await requestAuthApi(`/api/screen-validations/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
+    showToast('Registro de validación eliminado correctamente.');
+    await loadScreenValidationRecords();
+  } catch (err) {
+    console.error('Error al eliminar validación:', err);
+    alert(err.message || 'No se pudo eliminar el registro.');
   }
 };

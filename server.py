@@ -1822,6 +1822,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_json(200, {'ok': True, 'sessionsRevoked': True})
 
     def do_DELETE(self):
+        validation_match = re.fullmatch(r'/api/screen-validations/([a-f0-9]{32})', urlparse(self.path).path)
+        if validation_match:
+            if not self.require_same_origin() or not self.require_admin():
+                return
+            record_id = validation_match.group(1)
+            with self.database() as connection:
+                connection.execute('DELETE FROM screen_validation_images WHERE record_id = ?', (record_id,))
+                result = connection.execute('DELETE FROM screen_validation_records WHERE id = ?', (record_id,))
+            if result.rowcount == 0:
+                self.send_json(404, {'error': 'No se encontró ese registro de validación.'})
+                return
+            self.send_json(200, {'ok': True})
+            return
         team_match = re.fullmatch(r'/api/quality-team/(\d+)', urlparse(self.path).path)
         if team_match:
             if not self.require_same_origin() or not self.require_admin():
