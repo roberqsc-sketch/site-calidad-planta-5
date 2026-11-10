@@ -1,36 +1,89 @@
 /**
  * Google Apps Script - Validación de Pantallas Planta 5
  * 
- * Este script se usa en la Web App de Apps Script:
+ * Vinculado a la planilla oficial de Google Sheets:
+ * https://docs.google.com/spreadsheets/d/1RdQDItzlz2T_OT-D_DVZ38SrZbLwWuK8IJTFD5XQcoE/edit?gid=0#gid=0
+ * 
+ * URL de la Web App implementada:
  * https://script.google.com/macros/s/AKfycbwC_b5G6m6qS0140MB9-awYuKHr_vFNiodlSxJL2CJPrl3nGMQGdvSgRlYx1NoKiMgV/exec
  * 
- * Si necesitas actualizarlo en el editor de Google Apps Script:
- * 1. Abrí tu script en script.google.com
- * 2. Pegá este código en Código.gs
- * 3. Hacé clic en 'Implementar' > 'Gestionar implementaciones' > Editar > 'Nueva versión' > Guardar.
+ * PASOS PARA ACTUALIZAR EN TU GOOGLE SHEETS:
+ * 1. Abrí tu planilla: https://docs.google.com/spreadsheets/d/1RdQDItzlz2T_OT-D_DVZ38SrZbLwWuK8IJTFD5XQcoE/edit
+ * 2. En el menú superior hacé clic en: Extensiones > Apps Script
+ * 3. En Código.gs reemplazá todo el código por este bloque completo.
+ * 4. Hacé clic en: Implementar > Gestionar implementaciones > Editar (icono lápiz) > Versión: "Nueva versión" > Implementar.
  */
 
 function doPost(e) {
   try {
-    var data = JSON.parse(e.postData.contents);
-    
-    // 1. Usar el cuerpo HTML pre-renderizado si la aplicación lo envió
+    var contents = e.postData.contents;
+    var data = JSON.parse(contents);
+
+    // 1. Obtener la hoja de cálculo activa
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+    // 2. Formatear fecha y hora
+    var fechaStr = Utilities.formatDate(new Date(), "America/Argentina/Buenos_Aires", "d/M/yyyy, HH:mm:ss");
+
+    // 3. Procesar seriales / códigos de barra
+    var barcodes = [];
+    if (Array.isArray(data.barcodes) && data.barcodes.length > 0) {
+      barcodes = data.barcodes;
+    } else if (data.barcode) {
+      barcodes = data.barcode.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+    }
+    var barcodesUnidos = barcodes.length > 0 ? barcodes.join(', ') : (data.barcode || '');
+
+    // 4. Procesar imágenes adjuntas
+    var attachments = [];
+    var imagenesCount = 0;
+    if (data.images && Array.isArray(data.images)) {
+      imagenesCount = data.images.length;
+      for (var i = 0; i < data.images.length; i++) {
+        var img = data.images[i];
+        if (img && img.dataUrl) {
+          try {
+            var parts = img.dataUrl.split(',');
+            var meta = parts[0];
+            var base64Data = parts[1];
+            var mimeMatch = meta.match(/data:([^;]+)/);
+            var mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+            var bytes = Utilities.base64Decode(base64Data);
+            var blob = Utilities.newBlob(bytes, mimeType, img.name || ('evidencia_' + (i + 1) + '.jpg'));
+            attachments.push(blob);
+          } catch (errImg) {
+            console.warn('Error al procesar imagen: ' + errImg);
+          }
+        }
+      }
+    }
+
+    var evidenciasTexto = imagenesCount > 0 ? (imagenesCount + ' foto(s)') : '';
+
+    // 5. Guardar la fila en la planilla de Google Sheets
+    // Columnas: Fecha, Responsable, Línea, Modelo, Código de Barras, Lote, Observaciones, Evidencias
+    sheet.appendRow([
+      fechaStr,
+      data.responsible || 'Rober Quiquinlla',
+      data.line || '',
+      data.model || '',
+      barcodesUnidos,
+      data.lot || '',
+      data.observations || '',
+      evidenciasTexto
+    ]);
+
+    // 6. Generar el correo con diseño ejecutivo minimalista
     var htmlBody = data.htmlBody;
-    
-    // 2. Si no viene htmlBody, construir la plantilla minimalista automáticamente
     if (!htmlBody) {
-      var dateStr = Utilities.formatDate(new Date(), "America/Argentina/Buenos_Aires", "dd/MM/yyyy HH:mm:ss");
-      var barcodes = data.barcodes || (data.barcode ? data.barcode.split(',') : []);
       var chipsHtml = barcodes.map(function(b) {
-        return '<span style="display:inline-block;margin:3px 4px 3px 0;padding:5px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;font-weight:600;color:#1e293b;">' + escapeHtml(b.toString().trim()) + '</span>';
+        return '<span style="display:inline-block;margin:3px 4px 3px 0;padding:5px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;font-weight:600;color:#1e293b;">' + escapeHtml(b) + '</span>';
       }).join('');
-      
-      var obsHtml = data.observations 
+
+      var obsHtml = data.observations
         ? '<div style="padding:10px 14px;background:#f8fafc;border-left:3px solid #cbd5e1;border-radius:4px;font-size:13px;color:#334155;line-height:1.5;">' + escapeHtml(data.observations) + '</div>'
         : '<span style="color:#94a3b8;font-size:13px;font-style:italic;">Sin observaciones</span>';
-        
-      var imagesCount = (data.images && data.images.length) ? data.images.length : 0;
-      
+
       htmlBody = '<!DOCTYPE html>' +
         '<html lang="es">' +
         '<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Validación de pantalla</title></head>' +
@@ -79,7 +132,7 @@ function doPost(e) {
         '          <tr>' +
         '            <td colspan="2" valign="top" style="padding-bottom:18px;">' +
         '              <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;margin-bottom:4px;">Fecha y Hora</div>' +
-        '              <div style="font-size:12px;color:#475569;">' + dateStr + '</div>' +
+        '              <div style="font-size:12px;color:#475569;">' + fechaStr + '</div>' +
         '            </td>' +
         '          </tr>' +
         '          <tr>' +
@@ -97,7 +150,7 @@ function doPost(e) {
         '          <tr>' +
         '            <td colspan="2" valign="top">' +
         '              <div style="display:inline-flex;align-items:center;padding:7px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;color:#475569;">' +
-        '                📎 <strong style="margin-left:6px;margin-right:4px;color:#1e293b;">' + imagesCount + '</strong> archivo(s) de imagen adjunto(s)' +
+        '                📎 <strong style="margin-left:6px;margin-right:4px;color:#1e293b;">' + imagenesCount + '</strong> archivo(s) de imagen adjunto(s)' +
         '              </div>' +
         '            </td>' +
         '          </tr>' +
@@ -122,18 +175,20 @@ function doPost(e) {
         '</html>';
     }
 
-    // 3. Envío de correo
+    // 7. Enviar correo a los destinatarios con las imágenes adjuntas
     var recipients = "roberqsc@gmail.com, roberqsc@hotmail.com";
-    var subject = "Validación de Pantalla · Línea " + data.line + " · " + data.model + " · " + (data.barcode || (data.barcodes ? data.barcodes.join(', ') : ''));
+    var subject = "Validación de Pantalla · Línea " + (data.line || '') + " · " + (data.model || '') + " · " + barcodesUnidos;
 
     MailApp.sendEmail({
       to: recipients,
       subject: subject,
-      htmlBody: htmlBody
+      htmlBody: htmlBody,
+      attachments: attachments
     });
 
     return ContentService.createTextOutput(JSON.stringify({ status: "success" })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
+    console.error('Error en doPost: ' + err);
     return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() })).setMimeType(ContentService.MimeType.JSON);
   }
 }
