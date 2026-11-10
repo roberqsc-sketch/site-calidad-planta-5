@@ -5911,7 +5911,7 @@ window.renderAuditReports = function() {
     </tr>
   `).join('') : '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400 text-xs">Sin no conformidades para el período y filtros seleccionados.</td></tr>';
 
-    // Análisis de formularios completados y faltantes por fecha
+    // Análisis de formularios y auditorías realizadas por fecha
   const byDateMap = new Map();
   selectedRecords.forEach(r => {
     const dk = r.dateKey || '';
@@ -5921,11 +5921,9 @@ window.renderAuditReports = function() {
   });
 
   const sortedDateKeys = [...byDateMap.keys()].sort().reverse();
-  const missingAnalysisRows = [];
-  let daysWithMissing = 0;
-  let daysComplete = 0;
-  let totalMissingInstances = 0;
-  let totalCompletedInstances = 0;
+  const summaryAnalysisRows = [];
+  let rowsWithNg = 0;
+  let rowsOk = 0;
 
   sortedDateKeys.forEach(dateKey => {
     const dayRecords = byDateMap.get(dateKey);
@@ -5941,41 +5939,34 @@ window.renderAuditReports = function() {
         return { ...f, count, ngCount };
       });
 
-      const missingForms = ALL_SIX_AUDIT_FORMS.filter(f => !completedKeys.has(f.key));
-      const isComplete = missingForms.length === 0;
-
-      if (isComplete) daysComplete++;
-      else daysWithMissing++;
-
-      totalCompletedInstances += completedForms.length;
-      totalMissingInstances += missingForms.length;
+      const ngCount = lineRecords.filter(isAuditRecordNonConforming).length;
+      if (ngCount > 0) rowsWithNg++;
+      else rowsOk++;
 
       const dateObj = new Date(`${dateKey}T00:00:00`);
       const dateFormatted = !isNaN(dateObj)
         ? new Intl.DateTimeFormat('es-AR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }).format(dateObj)
         : dateKey;
 
-      missingAnalysisRows.push({
+      summaryAnalysisRows.push({
         dateKey,
         dateFormatted,
         lineName: getCleanLineLabel(lineName),
         completedForms,
-        missingForms,
-        isComplete,
         recordsCount: lineRecords.length,
-        ngCount: lineRecords.filter(isAuditRecordNonConforming).length
+        ngCount
       });
     });
   });
 
-  // Filtrado según auditMissingFilterState
-  const filteredAnalysisRows = missingAnalysisRows.filter(row => {
-    if (auditMissingFilterState === 'missing_only') return !row.isComplete;
-    if (auditMissingFilterState === 'complete_only') return row.isComplete;
+  // Filtrado según auditMissingFilterState (all, ok_only, ng_only)
+  const filteredAnalysisRows = summaryAnalysisRows.filter(row => {
+    if (auditMissingFilterState === 'ng_only') return row.ngCount > 0;
+    if (auditMissingFilterState === 'ok_only') return row.ngCount === 0;
     return true;
   });
 
-  const missingRowsHtml = filteredAnalysisRows.length ? filteredAnalysisRows.map(row => {
+  const summaryRowsHtml = filteredAnalysisRows.length ? filteredAnalysisRows.map(row => {
     const completedBadges = row.completedForms.map(f => `
       <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold mr-1.5 mb-1 shadow-xs" title="${escapeAuditReportText(f.title)}">
         <span class="text-xs">${f.icon}</span>
@@ -5985,18 +5976,9 @@ window.renderAuditReports = function() {
       </span>
     `).join('');
 
-    const missingBadges = row.missingForms.length ? row.missingForms.map(f => `
-      <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-rose-50 text-rose-800 border border-rose-200 text-[11px] font-bold mr-1.5 mb-1 shadow-xs" title="Falta completar: ${escapeAuditReportText(f.title)}">
-        <svg class="w-3 h-3 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
-        <span>Falta: ${escapeAuditReportText(f.short)}</span>
-      </span>
-    `).join('') : '<span class="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700">✨ Todos los formularios cargados</span>';
-
-    const statusBadge = row.isComplete
-      ? '<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold border border-emerald-300">6 / 6 (100%)</span>'
-      : row.completedForms.length > 0
-        ? `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 text-[10px] font-extrabold border border-amber-300">${row.completedForms.length}/6 · Faltan ${row.missingForms.length}</span>`
-        : `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 text-[10px] font-extrabold border border-rose-300">0/6 · Faltan 6</span>`;
+    const qualityBadge = row.ngCount === 0
+      ? '<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold border border-emerald-300">✓ 100% Conforme</span>'
+      : `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 text-[10px] font-extrabold border border-rose-300">⚠ ${row.ngCount} No Conforme${row.ngCount > 1 ? 's' : ''}</span>`;
 
     return `
       <tr class="hover:bg-slate-50 transition-colors">
@@ -6012,20 +5994,20 @@ window.renderAuditReports = function() {
             ${completedBadges || '<span class="text-xs text-slate-400 italic">Sin formularios</span>'}
           </div>
         </td>
-        <td class="px-4 py-3">
-          <div class="flex flex-wrap items-center">
-            ${missingBadges}
-          </div>
+        <td class="px-4 py-3 whitespace-nowrap text-center">
+          <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
+            ${row.recordsCount} control${row.recordsCount > 1 ? 'es' : ''}
+          </span>
         </td>
         <td class="px-4 py-3 text-right whitespace-nowrap">
-          ${statusBadge}
+          ${qualityBadge}
         </td>
       </tr>
     `;
   }).join('') : `
     <tr>
       <td colspan="5" class="px-4 py-8 text-center text-slate-400 text-xs">
-        No se encontraron fechas para el filtro seleccionado (${escapeAuditReportText(auditMissingFilterState)}).
+        No se encontraron registros para el filtro seleccionado (${escapeAuditReportText(auditMissingFilterState)}).
       </td>
     </tr>
   `;
@@ -6034,22 +6016,22 @@ window.renderAuditReports = function() {
     <div class="flex flex-wrap items-end justify-between gap-3">
       <div>
         <h4 class="font-bold text-sm text-slate-900">Radiografía: ${escapeAuditReportText(lineLabel)}</h4>
-        <p class="text-[11px] text-slate-500 mt-1">Período: ${escapeAuditReportText(periodLabel)} · ${selectedRecords.length} formularios registrados · ${missingAnalysisRows.length} registros fecha/línea analizados</p>
+        <p class="text-[11px] text-slate-500 mt-1">Período: ${escapeAuditReportText(periodLabel)} · ${selectedRecords.length} formularios registrados · ${summaryAnalysisRows.length} registros fecha/línea analizados</p>
       </div>
       ${auditRadiographyConfig.month ? '<button type="button" onclick="window.clearAuditReportMonth()" class="text-[11px] font-semibold text-violet-700 hover:text-violet-900">Quitar filtro del gráfico</button>' : ''}
     </div>
 
-    <!-- KPI CARDS CON DETECCIÓN DE FALTANTES -->
+    <!-- KPI CARDS -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
       <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 shadow-xs">
         <span class="text-xs text-slate-500 font-medium">Formularios realizados</span>
         <div class="mt-1 text-2xl font-black text-slate-900">${selectedRecords.length}</div>
         <p class="text-[10px] text-slate-500 mt-0.5">${sortedDateKeys.length} fechas registradas</p>
       </div>
-      <div class="p-4 rounded-xl ${totalMissingInstances > 0 ? 'bg-amber-50/80 border-amber-200' : 'bg-emerald-50/80 border-emerald-200'} border shadow-xs">
-        <span class="text-xs ${totalMissingInstances > 0 ? 'text-amber-800' : 'text-emerald-800'} font-medium">Formularios faltantes detectados</span>
-        <div class="mt-1 text-2xl font-black ${totalMissingInstances > 0 ? 'text-amber-900' : 'text-emerald-900'}">${totalMissingInstances}</div>
-        <p class="text-[10px] ${totalMissingInstances > 0 ? 'text-amber-700' : 'text-emerald-700'} mt-0.5">${daysWithMissing} fechas con faltantes · ${daysComplete} completas</p>
+      <div class="p-4 rounded-xl bg-emerald-50/80 border-emerald-200 border shadow-xs">
+        <span class="text-xs text-emerald-800 font-medium">Auditorías Conformes (OK)</span>
+        <div class="mt-1 text-2xl font-black text-emerald-900">${selectedRecords.length - ngRowCount}</div>
+        <p class="text-[10px] text-emerald-700 mt-0.5">${selectedRecords.length ? Math.round((selectedRecords.length - ngRowCount) / selectedRecords.length * 100) : 100}% de conformidad operativa</p>
       </div>
       <div class="p-4 rounded-xl bg-rose-50 border border-rose-200 shadow-xs">
         <span class="text-xs text-rose-700 font-medium">Auditorías con NG</span>
@@ -6063,31 +6045,31 @@ window.renderAuditReports = function() {
       </div>
     </div>
 
-    <!-- SECCIÓN INTERACTIVA: DETECCIÓN DE FORMULARIOS FALTANTES POR FECHA -->
+    <!-- SECCIÓN INTERACTIVA: REGISTRO DE FORMULARIOS REALIZADOS POR FECHA -->
     <section class="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-xs">
       <div class="p-4 sm:p-5 bg-gradient-to-r from-violet-50/80 via-slate-50/60 to-white border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
           <div class="flex items-center gap-2">
             <span class="w-7 h-7 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center text-sm font-bold shadow-xs">📋</span>
-            <h4 class="font-bold text-sm text-slate-900">Detección de Formularios Faltantes por Fecha y Línea</h4>
-            <span class="text-[10px] font-bold px-2.5 py-0.5 rounded-full ${daysWithMissing > 0 ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-emerald-100 text-emerald-900 border border-emerald-300'}">
-              ${daysWithMissing > 0 ? `${daysWithMissing} fechas con faltantes` : '100% al día'}
+            <h4 class="font-bold text-sm text-slate-900">Registro de Formularios Realizados por Fecha y Línea</h4>
+            <span class="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300">
+              ${selectedRecords.length} auditorías registradas
             </span>
           </div>
           <p class="text-[11px] text-slate-500 mt-1">
-            Revisión automática de los 6 formularios operativos por cada fecha: identifica exactamente qué controles fueron registrados y cuáles faltan cargar.
+            Detalle cronológico de los controles operativos y auditorías registradas en Planta 5.
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <div class="inline-flex rounded-lg border border-slate-200 bg-white p-1 text-[11px] font-semibold shadow-xs">
             <button type="button" onclick="window.setAuditMissingFilter('all')" class="px-2.5 py-1 rounded-md transition-colors ${auditMissingFilterState === 'all' ? 'bg-violet-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}">
-              Todas (${missingAnalysisRows.length})
+              Todas (${summaryAnalysisRows.length})
             </button>
-            <button type="button" onclick="window.setAuditMissingFilter('missing_only')" class="px-2.5 py-1 rounded-md transition-colors ${auditMissingFilterState === 'missing_only' ? 'bg-amber-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}">
-              ⚠️ Con faltantes (${daysWithMissing})
+            <button type="button" onclick="window.setAuditMissingFilter('ok_only')" class="px-2.5 py-1 rounded-md transition-colors ${auditMissingFilterState === 'ok_only' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}">
+              ✅ Conformes (${rowsOk})
             </button>
-            <button type="button" onclick="window.setAuditMissingFilter('complete_only')" class="px-2.5 py-1 rounded-md transition-colors ${auditMissingFilterState === 'complete_only' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}">
-              ✅ Completas (${daysComplete})
+            <button type="button" onclick="window.setAuditMissingFilter('ng_only')" class="px-2.5 py-1 rounded-md transition-colors ${auditMissingFilterState === 'ng_only' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}">
+              ⚠️ Con NG (${rowsWithNg})
             </button>
           </div>
         </div>
@@ -6099,13 +6081,13 @@ window.renderAuditReports = function() {
             <tr>
               <th class="px-4 py-3 bg-slate-50">Fecha</th>
               <th class="px-4 py-3 bg-slate-50">Línea</th>
-              <th class="px-4 py-3 bg-slate-50 min-w-[200px]">Formularios Realizados</th>
-              <th class="px-4 py-3 bg-slate-50 min-w-[260px]">Formularios Faltantes</th>
-              <th class="px-4 py-3 bg-slate-50 text-right">Cumplimiento</th>
+              <th class="px-4 py-3 bg-slate-50 min-w-[280px]">Formularios Realizados</th>
+              <th class="px-4 py-3 bg-slate-50 text-center">Cantidad</th>
+              <th class="px-4 py-3 bg-slate-50 text-right">Estado de Calidad</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
-            ${missingRowsHtml}
+            ${summaryRowsHtml}
           </tbody>
         </table>
       </div>
@@ -6732,8 +6714,6 @@ function renderDashboardOverview() {
       noAuditor.className = 'text-[10px] text-slate-400 italic';
       noAuditor.textContent = 'Sin auditor asignado';
       lineResponsibles.appendChild(noAuditor);
-    } else {
-      lineResponsibles.textContent = 'Responsables: por asignar';
     }
     lineCell.append(lineName, lineResponsibles);
     row.appendChild(lineCell);
