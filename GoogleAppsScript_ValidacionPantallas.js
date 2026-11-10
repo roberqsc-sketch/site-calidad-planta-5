@@ -4,8 +4,10 @@
  * Vinculado a la planilla oficial de Google Sheets:
  * https://docs.google.com/spreadsheets/d/1RdQDItzlz2T_OT-D_DVZ38SrZbLwWuK8IJTFD5XQcoE/edit?gid=0#gid=0
  * 
- * URL de la Web App implementada:
- * https://script.google.com/macros/s/AKfycbwC_b5G6m6qS0140MB9-awYuKHr_vFNiodlSxJL2CJPrl3nGMQGdvSgRlYx1NoKiMgV/exec
+ * CARACTERÍSTICAS:
+ * - Guarda las fotos en Google Drive (carpeta "Evidencias Validación Pantallas").
+ * - Crea enlaces azules clicables (Foto 1, Foto 2, etc.) en la columna "Evidencias" (Columna H).
+ * - Envía correo con diseño ejecutivo minimalista y fotos adjuntas.
  * 
  * PASOS PARA ACTUALIZAR EN TU GOOGLE SHEETS:
  * 1. Abrí tu planilla: https://docs.google.com/spreadsheets/d/1RdQDItzlz2T_OT-D_DVZ38SrZbLwWuK8IJTFD5XQcoE/edit
@@ -34,34 +36,47 @@ function doPost(e) {
     }
     var barcodesUnidos = barcodes.length > 0 ? barcodes.join(', ') : (data.barcode || '');
 
-    // 4. Procesar imágenes adjuntas
+    // 4. Guardar imágenes en Google Drive y crear enlaces azules
     var attachments = [];
-    var imagenesCount = 0;
-    if (data.images && Array.isArray(data.images)) {
-      imagenesCount = data.images.length;
+    var photoLinks = [];
+    if (data.images && Array.isArray(data.images) && data.images.length > 0) {
+      // Buscar o crear carpeta en Drive para almacenar las fotos
+      var folderName = "Evidencias Validación Pantallas";
+      var folders = DriveApp.getFoldersByName(folderName);
+      var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(folderName);
+
       for (var i = 0; i < data.images.length; i++) {
         var img = data.images[i];
         if (img && img.dataUrl) {
           try {
             var parts = img.dataUrl.split(',');
-            var meta = parts[0];
             var base64Data = parts[1];
-            var mimeMatch = meta.match(/data:([^;]+)/);
+            var mimeMatch = parts[0].match(/data:([^;]+)/);
             var mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
             var bytes = Utilities.base64Decode(base64Data);
-            var blob = Utilities.newBlob(bytes, mimeType, img.name || ('evidencia_' + (i + 1) + '.jpg'));
+            var safeName = (data.model || 'pantalla') + '_' + (barcodes[i] || ('serial_' + (i + 1))) + '_' + (i + 1) + '.jpg';
+            var blob = Utilities.newBlob(bytes, mimeType, img.name || safeName);
+            
+            // Crear archivo en Drive y habilitar visualización
+            var file = folder.createFile(blob);
+            try {
+              file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+            } catch (shareErr) {
+              console.warn('Permiso público no aplicado: ' + shareErr);
+            }
+            
+            var fileUrl = file.getUrl();
+            photoLinks.push({ label: 'Foto ' + (i + 1), url: fileUrl });
             attachments.push(blob);
           } catch (errImg) {
-            console.warn('Error al procesar imagen: ' + errImg);
+            console.warn('Error al guardar imagen en Drive: ' + errImg);
           }
         }
       }
     }
 
-    var evidenciasTexto = imagenesCount > 0 ? (imagenesCount + ' foto(s)') : '';
-
-    // 5. Guardar la fila en la planilla de Google Sheets
-    // Columnas: Fecha, Responsable, Línea, Modelo, Código de Barras, Lote, Observaciones, Evidencias
+    // 5. Guardar la fila en Google Sheets
+    // Columnas: Fecha (A), Responsable (B), Línea (C), Modelo (D), Código de Barras (E), Lote (F), Observaciones (G), Evidencias (H)
     sheet.appendRow([
       fechaStr,
       data.responsible || 'Rober Quiquinlla',
@@ -70,8 +85,31 @@ function doPost(e) {
       barcodesUnidos,
       data.lot || '',
       data.observations || '',
-      evidenciasTexto
+      photoLinks.length > 0 ? '' : '—'
     ]);
+
+    var newRow = sheet.getLastRow();
+
+    // 5.1 Si hay fotos, construir los enlaces clicables de color azul en la columna H (Evidencias)
+    if (photoLinks.length > 0) {
+      var cell = sheet.getRange(newRow, 8); // Columna H = 8
+      var fullText = "";
+      var linkRanges = [];
+
+      for (var k = 0; k < photoLinks.length; k++) {
+        var prefix = k > 0 ? "   " : "";
+        var startIdx = fullText.length + prefix.length;
+        fullText += prefix + photoLinks[k].label;
+        var endIdx = fullText.length;
+        linkRanges.push({ start: startIdx, end: endIdx, url: photoLinks[k].url });
+      }
+
+      var richTextBuilder = SpreadsheetApp.newRichTextValue().setText(fullText);
+      for (var r = 0; r < linkRanges.length; r++) {
+        richTextBuilder.setLinkUrl(linkRanges[r].start, linkRanges[r].end, linkRanges[r].url);
+      }
+      cell.setRichTextValue(richTextBuilder.build());
+    }
 
     // 6. Generar el correo con diseño ejecutivo minimalista
     var htmlBody = data.htmlBody;
@@ -83,6 +121,15 @@ function doPost(e) {
       var obsHtml = data.observations
         ? '<div style="padding:10px 14px;background:#f8fafc;border-left:3px solid #cbd5e1;border-radius:4px;font-size:13px;color:#334155;line-height:1.5;">' + escapeHtml(data.observations) + '</div>'
         : '<span style="color:#94a3b8;font-size:13px;font-style:italic;">Sin observaciones</span>';
+
+      var driveLinksHtml = '';
+      if (photoLinks.length > 0) {
+        driveLinksHtml = '<div style="margin-top:6px;font-size:12px;">' +
+          photoLinks.map(function(p) {
+            return '<a href="' + p.url + '" target="_blank" style="color:#0284c7;font-weight:600;margin-right:12px;text-decoration:underline;">' + p.label + ' ↗</a>';
+          }).join('') +
+          '</div>';
+      }
 
       htmlBody = '<!DOCTYPE html>' +
         '<html lang="es">' +
@@ -150,8 +197,9 @@ function doPost(e) {
         '          <tr>' +
         '            <td colspan="2" valign="top">' +
         '              <div style="display:inline-flex;align-items:center;padding:7px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;color:#475569;">' +
-        '                📎 <strong style="margin-left:6px;margin-right:4px;color:#1e293b;">' + imagenesCount + '</strong> archivo(s) de imagen adjunto(s)' +
+        '                📎 <strong style="margin-left:6px;margin-right:4px;color:#1e293b;">' + photoLinks.length + '</strong> archivo(s) de imagen adjunto(s)' +
         '              </div>' +
+        '              ' + driveLinksHtml +
         '            </td>' +
         '          </tr>' +
         '        </table>' +
