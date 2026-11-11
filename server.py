@@ -818,6 +818,19 @@ def load_tv_events_records(force_refresh=False):
                     nc_type = 'Máquina / Herramental'
                 else:
                     nc_type = raw_nc_type
+                raw_urls = values[16].strip()
+                parsed_urls = [u.strip() for u in re.split(r'[\s,\n]+', raw_urls) if u.strip().startswith('http')]
+                defect_val = values[10].strip()
+                impact_val = values[12].strip()
+                containment_val = values[13].strip()
+                corrective_val = values[14].strip()
+                has_mdr = (
+                    'MDR' in defect_val.upper() or
+                    'MDR' in impact_val.upper() or
+                    'MDR' in containment_val.upper() or
+                    'MDR' in corrective_val.upper()
+                )
+
                 records.append({
                     'id': row_idx,
                     'timestamp': raw_timestamp,
@@ -833,14 +846,17 @@ def load_tv_events_records(force_refresh=False):
                     'ncType': nc_type,
                     'partNumber': part_number,
                     'materialSupplier': values[9].strip(),
-                    'defect': values[10].strip(),
+                    'defect': defect_val,
                     'responsibleArea': values[11].strip(),
-                    'impact': values[12].strip(),
-                    'containmentAction': values[13].strip(),
-                    'correctiveAction': values[14].strip(),
+                    'impact': impact_val,
+                    'containmentAction': containment_val,
+                    'correctiveAction': corrective_val,
                     'contacts': values[15].strip(),
-                    'evidenceUrl': values[16].strip(),
+                    'evidenceUrl': raw_urls,
+                    'urls': parsed_urls,
                     'observations': values[17].strip(),
+                    'considerations': values[17].strip(),
+                    'hasMdr': has_mdr,
                     'claimDate': values[18].strip(),
                     'sapDelivery': values[19].strip(),
                     'sapBatch': values[20].strip(),

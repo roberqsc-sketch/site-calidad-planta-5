@@ -3417,7 +3417,30 @@ const tvEventsFilters = {
   model: null,
   year: '',
   ncType: '',
-  onlyWithUrl: false
+  onlyWithUrl: false,
+  onlyMdr: false
+};
+
+function getTvEventUrls(record) {
+  if (Array.isArray(record.urls) && record.urls.length > 0) return record.urls;
+  const raw = String(record.evidenceUrl || '').trim();
+  if (!raw) return [];
+  return raw.split(/[\s,\n]+/).map(u => u.trim()).filter(u => u.startsWith('http'));
+}
+
+function checkTvEventHasMdr(record) {
+  if (!record) return false;
+  if (record.hasMdr !== undefined) return Boolean(record.hasMdr);
+  const k = String(record.defect || '').toLocaleUpperCase();
+  const m = String(record.impact || '').toLocaleUpperCase();
+  const n = String(record.containmentAction || '').toLocaleUpperCase();
+  const o = String(record.correctiveAction || '').toLocaleUpperCase();
+  return k.includes('MDR') || m.includes('MDR') || n.includes('MDR') || o.includes('MDR');
+}
+
+window.toggleTvEventsMdrOnly = function() {
+  tvEventsFilters.onlyMdr = !tvEventsFilters.onlyMdr;
+  renderTvEventsDashboard();
 };
 
 window.switchReportSubTab = function(subTab) {
@@ -3584,7 +3607,10 @@ function getFilteredTvEvents(excludeDimension = null) {
     if (tvEventsFilters.ncType && (record.ncType || '').trim() !== tvEventsFilters.ncType) {
       return false;
     }
-    if (tvEventsFilters.onlyWithUrl && (!Array.isArray(record.urls) || record.urls.length === 0)) {
+    if (tvEventsFilters.onlyWithUrl && getTvEventUrls(record).length === 0) {
+      return false;
+    }
+    if (tvEventsFilters.onlyMdr && !checkTvEventHasMdr(record)) {
       return false;
     }
     if (excludeDimension !== 'supplier' && tvEventsFilters.supplier !== null) {
@@ -3638,6 +3664,7 @@ window.clearTvEventsFilters = function() {
   tvEventsFilters.year = '';
   tvEventsFilters.ncType = '';
   tvEventsFilters.onlyWithUrl = false;
+  tvEventsFilters.onlyMdr = false;
 
   const yearSelect = document.getElementById('tvEventsYearFilter');
   const ncTypeSelect = document.getElementById('tvEventsNcTypeFilter');
@@ -3744,8 +3771,32 @@ function renderTvEventsDashboard() {
   const supChassisEl = document.getElementById('tvEventsSuppliersChassisCount');
   const topSupplierSubEl = document.getElementById('tvEventsTopSupplierSub');
 
-  const withUrlCount = filtered.filter(r => Array.isArray(r.urls) && r.urls.length > 0).length;
-  const totalLinksCount = filtered.reduce((acc, r) => acc + (Array.isArray(r.urls) ? r.urls.length : 0), 0);
+  const withUrlCount = filtered.filter(r => getTvEventUrls(r).length > 0).length;
+  const totalLinksCount = filtered.reduce((acc, r) => acc + getTvEventUrls(r).length, 0);
+
+  // Alerta MDR en columnas K, M, N, O
+  const totalMdrCount = tvEventsRecords.filter(checkTvEventHasMdr).length;
+  const mdrBanner = document.getElementById('tvEventsMdrBanner');
+  const mdrBannerCount = document.getElementById('tvEventsMdrBannerCount');
+  const mdrFilterBtn = document.getElementById('btnTvEventsFilterMdr');
+  const mdrCountBadge = document.getElementById('tvEventsMdrCountBadge');
+
+  if (mdrBanner && mdrBannerCount) {
+    if (totalMdrCount > 0) {
+      mdrBanner.classList.remove('hidden');
+      mdrBannerCount.textContent = totalMdrCount;
+    } else {
+      mdrBanner.classList.add('hidden');
+    }
+  }
+  if (mdrFilterBtn && mdrCountBadge) {
+    mdrCountBadge.textContent = tvEventsFilters.onlyMdr
+      ? `Mostrando MDR (${totalMdrCount}) ✕`
+      : `MDR (${totalMdrCount})`;
+    mdrFilterBtn.className = tvEventsFilters.onlyMdr
+      ? 'inline-flex items-center gap-1.5 rounded-lg border border-rose-700 bg-rose-600 px-2.5 py-1 text-[11px] font-black text-white shadow-sm transition cursor-pointer'
+      : 'inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-extrabold text-rose-700 shadow-2xs transition hover:bg-rose-100 hover:border-rose-300 cursor-pointer';
+  }
 
   const uniqueModels = new Set(filtered.map(r => (r.model || '').trim()).filter(Boolean));
   const uniqueSuppliers = new Set(filtered.map(r => (r.supplier || '').trim()).filter(Boolean));
@@ -3785,6 +3836,7 @@ function renderTvEventsDashboard() {
   if (tvEventsFilters.year) activeParts.push(`Año: ${tvEventsFilters.year}`);
   if (tvEventsFilters.ncType) activeParts.push(`Tipo NC: ${tvEventsFilters.ncType}`);
   if (tvEventsFilters.onlyWithUrl) activeParts.push('Solo con URL (Col. Q)');
+  if (tvEventsFilters.onlyMdr) activeParts.push('Solo eventos con MDR');
   const searchVal = (document.getElementById('tvEventsSearchInput')?.value || '').trim();
   if (searchVal) activeParts.push(`Búsqueda: "${searchVal}"`);
 
@@ -3854,6 +3906,44 @@ function compareTvEventsNewestFirst(a, b) {
   return (b.rowNumber || 0) - (a.rowNumber || 0);
 }
 
+function createTvEventTextCell(text, colLabel, maxWidthClass = 'max-w-[200px]') {
+  const td = document.createElement('td');
+  td.className = `px-3 py-2.5 text-xs text-slate-700 ${maxWidthClass} align-top`;
+
+  const val = String(text || '').trim();
+  if (!val) {
+    td.className += ' text-slate-300 italic';
+    td.textContent = '—';
+    return td;
+  }
+
+  td.setAttribute('title', `${colLabel}:\n${val}`);
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'cell-hover-popover line-clamp-2 leading-relaxed cursor-help font-medium transition-colors hover:text-slate-950';
+  wrapper.dataset.fullText = val;
+  wrapper.dataset.colLabel = colLabel;
+
+  if (/MDR/i.test(val)) {
+    const parts = val.split(/(MDR[^\s,.]*)/i);
+    parts.forEach(part => {
+      if (/^MDR/i.test(part)) {
+        const mdrPill = document.createElement('span');
+        mdrPill.className = 'inline-block rounded bg-rose-600 px-1 py-0.2 text-[10px] font-black text-white shadow-2xs mx-0.5';
+        mdrPill.textContent = part;
+        wrapper.appendChild(mdrPill);
+      } else if (part) {
+        wrapper.appendChild(document.createTextNode(part));
+      }
+    });
+  } else {
+    wrapper.textContent = val;
+  }
+
+  td.appendChild(wrapper);
+  return td;
+}
+
 function renderTvEventsTable(records) {
   const tbody = document.getElementById('tvEventsTableBody');
   const countLabel = document.getElementById('tvEventsSearchCount');
@@ -3871,7 +3961,7 @@ function renderTvEventsTable(records) {
   if (visible.length === 0) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
-    td.colSpan = 9;
+    td.colSpan = 12;
     td.className = 'px-3 py-8 text-center text-slate-400';
     td.textContent = 'No hay eventos que coincidan con los filtros seleccionados.';
     tr.appendChild(td);
@@ -3880,118 +3970,125 @@ function renderTvEventsTable(records) {
   }
 
   visible.forEach(record => {
+    const hasMdr = checkTvEventHasMdr(record);
     const tr = document.createElement('tr');
-    tr.className = 'align-top transition-colors hover:bg-slate-50/90';
+    tr.className = hasMdr
+      ? 'align-top transition-colors bg-rose-50/50 hover:bg-rose-100/60 border-l-4 border-l-rose-500'
+      : 'align-top transition-colors hover:bg-slate-50/90';
 
-    // 1. N° Evento (Col V)
+    // 1. N° Evento (Col V) + Alerta MDR
     const tdNum = document.createElement('td');
-    tdNum.className = 'px-3 py-3 whitespace-nowrap';
+    tdNum.className = 'px-3 py-2.5 whitespace-nowrap';
+    const numWrap = document.createElement('div');
+    numWrap.className = 'flex flex-col items-start gap-1';
+
     const numBadge = document.createElement('span');
     numBadge.className = 'inline-flex items-center rounded-md bg-red-50 border border-red-200 px-2 py-0.5 font-mono text-xs font-extrabold text-red-700';
     numBadge.textContent = record.eventNumber !== '' ? `#${record.eventNumber}` : 'S/N';
-    tdNum.appendChild(numBadge);
+    numWrap.appendChild(numBadge);
 
-    // 2. Fecha
-    const tdDate = document.createElement('td');
-    tdDate.className = 'px-3 py-3 whitespace-nowrap text-slate-600 font-medium';
-    tdDate.textContent = record.date || record.timestamp || '—';
+    if (record.date || record.timestamp) {
+      const dtSpan = document.createElement('span');
+      dtSpan.className = 'text-[10px] text-slate-400 font-medium';
+      dtSpan.textContent = record.date || record.timestamp;
+      numWrap.appendChild(dtSpan);
+    }
 
-    // 3. Modelo (Col C + Col D)
+    if (hasMdr) {
+      const mdrBadge = document.createElement('span');
+      mdrBadge.className = 'inline-flex items-center gap-1 rounded bg-rose-600 px-1.5 py-0.5 text-[9px] font-black uppercase text-white shadow-2xs tracking-wide animate-pulse';
+      mdrBadge.textContent = '🚨 ALERTA MDR';
+      mdrBadge.title = 'Se detectó la palabra MDR para gestionar reclamo';
+      numWrap.appendChild(mdrBadge);
+    }
+    tdNum.appendChild(numWrap);
+
+    // 2. Modelo (Col C)
     const tdModel = document.createElement('td');
-    tdModel.className = 'px-3 py-3';
+    tdModel.className = 'px-3 py-2.5 max-w-[160px] align-top';
+    const modelText = record.model || '—';
     const modelBtn = document.createElement('button');
     modelBtn.type = 'button';
-    modelBtn.className = 'text-left font-bold text-slate-900 hover:text-red-600 hover:underline';
-    modelBtn.textContent = record.model || '—';
+    modelBtn.className = 'cell-hover-popover text-left font-bold text-slate-900 hover:text-red-600 hover:underline line-clamp-2';
+    modelBtn.textContent = modelText;
+    modelBtn.dataset.fullText = modelText;
+    modelBtn.dataset.colLabel = 'Modelo (Col. C)';
+    modelBtn.title = modelText;
     if (record.model) {
       modelBtn.addEventListener('click', () => window.toggleTvEventsDimensionFilter('model', record.model));
     }
     tdModel.appendChild(modelBtn);
     if (record.otherModels) {
       const otherP = document.createElement('p');
-      otherP.className = 'mt-0.5 text-[10px] text-slate-500';
+      otherP.className = 'cell-hover-popover mt-0.5 text-[10px] text-slate-500 line-clamp-1 cursor-help';
       otherP.textContent = `Aplica a: ${record.otherModels}`;
+      otherP.dataset.fullText = record.otherModels;
+      otherP.dataset.colLabel = 'Otros Modelos (Col. D)';
       tdModel.appendChild(otherP);
     }
 
-    // 4. Proveedor (Col E)
-    const tdSupplier = document.createElement('td');
-    tdSupplier.className = 'px-3 py-3 whitespace-nowrap';
-    if (record.supplier) {
-      const supBtn = document.createElement('button');
-      supBtn.type = 'button';
-      supBtn.className = 'rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-red-50 hover:text-red-700';
-      supBtn.textContent = record.supplier;
-      supBtn.addEventListener('click', () => window.toggleTvEventsDimensionFilter('supplier', record.supplier));
-      tdSupplier.appendChild(supBtn);
-    } else {
-      tdSupplier.textContent = '—';
-    }
-
-    // 5. Chasis (Col F) · Lote (Col G)
-    const tdChassis = document.createElement('td');
-    tdChassis.className = 'px-3 py-3 whitespace-nowrap';
-    if (record.chassis) {
-      const chBtn = document.createElement('button');
-      chBtn.type = 'button';
-      chBtn.className = 'rounded-md bg-violet-50 border border-violet-200 px-2 py-0.5 font-mono text-[11px] font-bold text-violet-800 hover:bg-violet-100';
-      chBtn.textContent = record.chassis;
-      chBtn.addEventListener('click', () => window.toggleTvEventsDimensionFilter('chassis', record.chassis));
-      tdChassis.appendChild(chBtn);
-    } else {
-      const dash = document.createElement('span');
-      dash.className = 'text-slate-400';
-      dash.textContent = 'Sin chasis';
-      tdChassis.appendChild(dash);
-    }
-    if (record.lot) {
-      const lotSpan = document.createElement('div');
-      lotSpan.className = 'mt-1 text-[10px] font-mono text-slate-500';
-      lotSpan.textContent = `Lote: ${record.lot}`;
-      tdChassis.appendChild(lotSpan);
-    }
-
-    // 6. Tipo NC (Col H) · Área (Col L)
+    // 3. Tipo NC (Col H)
     const tdType = document.createElement('td');
-    tdType.className = 'px-3 py-3';
+    tdType.className = 'px-3 py-2.5 align-top whitespace-nowrap';
     if (record.ncType) {
       const badge = document.createElement('span');
       badge.className = 'inline-block rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-bold text-amber-800';
       badge.textContent = record.ncType;
       tdType.appendChild(badge);
-    }
-    if (record.responsibleArea) {
-      const areaDiv = document.createElement('div');
-      areaDiv.className = 'mt-1 text-[10px] text-slate-500';
-      areaDiv.textContent = record.responsibleArea;
-      tdType.appendChild(areaDiv);
-    }
-    if (!record.ncType && !record.responsibleArea) {
-      tdType.textContent = '—';
+    } else {
+      tdType.innerHTML = '<span class="text-slate-300">—</span>';
     }
 
-    // 7. Defecto / Problema (Col K) o Considerar que (Col R)
-    const tdDefect = document.createElement('td');
-    tdDefect.className = 'px-3 py-3 max-w-md whitespace-normal text-slate-700';
-    const mainText = record.defect || record.considerations || '—';
-    const defectP = document.createElement('p');
-    defectP.className = 'line-clamp-3 leading-relaxed';
-    defectP.textContent = mainText;
-    tdDefect.appendChild(defectP);
+    // 4. P/N (Col I)
+    const tdPn = document.createElement('td');
+    tdPn.className = 'px-3 py-2.5 align-top whitespace-nowrap font-mono text-[11px] text-slate-700';
     if (record.partNumber) {
-      const pnP = document.createElement('p');
-      pnP.className = 'mt-1 font-mono text-[10px] text-slate-500';
-      pnP.textContent = `P/N: ${record.partNumber}`;
-      tdDefect.appendChild(pnP);
+      const pnSpan = document.createElement('span');
+      pnSpan.className = 'cell-hover-popover rounded bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-800 cursor-help inline-block max-w-[120px] truncate';
+      pnSpan.textContent = record.partNumber;
+      pnSpan.dataset.fullText = record.partNumber;
+      pnSpan.dataset.colLabel = 'P/N (Col. I)';
+      pnSpan.title = record.partNumber;
+      tdPn.appendChild(pnSpan);
+    } else {
+      tdPn.innerHTML = '<span class="text-slate-300">—</span>';
     }
 
-    // 8. Evidencia URL (Col Q)
+    // 5. Defecto / Problema (Col K)
+    const tdDefect = createTvEventTextCell(record.defect, 'Defecto / Problema (Col. K)', 'max-w-[220px]');
+
+    // 6. Área responsable (Col L)
+    const tdArea = document.createElement('td');
+    tdArea.className = 'px-3 py-2.5 align-top text-xs text-slate-700 font-medium max-w-[130px]';
+    if (record.responsibleArea) {
+      const areaSpan = document.createElement('div');
+      areaSpan.className = 'cell-hover-popover line-clamp-2 cursor-help';
+      areaSpan.textContent = record.responsibleArea;
+      areaSpan.dataset.fullText = record.responsibleArea;
+      areaSpan.dataset.colLabel = 'Área Responsable (Col. L)';
+      areaSpan.title = record.responsibleArea;
+      tdArea.appendChild(areaSpan);
+    } else {
+      tdArea.innerHTML = '<span class="text-slate-300">—</span>';
+    }
+
+    // 7. Impacto (Col M)
+    const tdImpact = createTvEventTextCell(record.impact, 'Impacto (Col. M)', 'max-w-[200px]');
+
+    // 8. Acción Contención (Col N)
+    const tdContainment = createTvEventTextCell(record.containmentAction, 'Acción de Contención (Col. N)', 'max-w-[220px]');
+
+    // 9. Acción Correctiva (Col O)
+    const tdCorrective = createTvEventTextCell(record.correctiveAction, 'Acción Correctiva (Col. O)', 'max-w-[220px]');
+
+    // 10. URL Fotos / Evidencia (Col Q)
     const tdUrls = document.createElement('td');
-    tdUrls.className = 'px-3 py-3';
-    if (Array.isArray(record.urls) && record.urls.length > 0) {
+    tdUrls.className = 'px-3 py-2.5 align-top';
+    const urls = getTvEventUrls(record);
+    if (urls.length > 0) {
       const wrap = document.createElement('div');
-      wrap.className = 'flex flex-wrap gap-1.5';
-      record.urls.forEach((rawUrl, idx) => {
+      wrap.className = 'flex flex-wrap gap-1';
+      urls.forEach((rawUrl, idx) => {
         try {
           const parsed = new URL(rawUrl);
           if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
@@ -3999,33 +4096,96 @@ function renderTvEventsTable(records) {
             a.href = parsed.href;
             a.target = '_blank';
             a.rel = 'noopener noreferrer';
-            a.className = 'inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-800 transition hover:border-sky-400 hover:bg-sky-100';
-            a.textContent = record.urls.length === 1 ? 'Abrir URL' : `URL ${idx + 1}`;
+            a.className = 'inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-700 transition hover:border-sky-400 hover:bg-sky-100';
+            a.textContent = urls.length === 1 ? 'Ver Foto' : `Foto ${idx + 1}`;
             a.title = parsed.href;
             wrap.appendChild(a);
           }
-        } catch (e) {
-          // URL malformada
-        }
+        } catch (e) {}
       });
       tdUrls.appendChild(wrap);
     } else {
-      tdUrls.className = 'px-3 py-3 text-slate-400 text-[11px]';
-      tdUrls.textContent = 'Sin link';
+      tdUrls.innerHTML = '<span class="text-slate-300 text-[11px] italic">Sin link</span>';
     }
 
-    // 9. Botón Detalle
+    // 11. Observaciones / Consideraciones (Col R)
+    const tdObs = createTvEventTextCell(record.observations || record.considerations, 'Observaciones / Consideraciones (Col. R)', 'max-w-[200px]');
+
+    // 12. Botón Detalle
     const tdAction = document.createElement('td');
-    tdAction.className = 'px-3 py-3 text-right whitespace-nowrap';
+    tdAction.className = 'px-3 py-2.5 text-right whitespace-nowrap align-top';
     const detailBtn = document.createElement('button');
     detailBtn.type = 'button';
-    detailBtn.className = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-red-700';
+    detailBtn.className = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-red-700 cursor-pointer';
     detailBtn.textContent = 'Ver ficha';
     detailBtn.addEventListener('click', () => window.openTvEventDetailModal(record));
     tdAction.appendChild(detailBtn);
 
-    tr.append(tdNum, tdDate, tdModel, tdSupplier, tdChassis, tdType, tdDefect, tdUrls, tdAction);
+    tr.append(
+      tdNum,
+      tdModel,
+      tdType,
+      tdPn,
+      tdDefect,
+      tdArea,
+      tdImpact,
+      tdContainment,
+      tdCorrective,
+      tdUrls,
+      tdObs,
+      tdAction
+    );
     tbody.appendChild(tr);
+  });
+}
+
+// ==========================================
+// TOOLTIP FLOTANTE PARA CELDAS CON TEXTO LARGO
+// ==========================================
+if (!window.__tvCellTooltipBound) {
+  window.__tvCellTooltipBound = true;
+  document.addEventListener('mouseover', function(e) {
+    const target = e.target.closest('.cell-hover-popover');
+    const tooltip = document.getElementById('globalCellTooltip');
+    if (!target || !tooltip) return;
+
+    const fullText = target.dataset.fullText;
+    const colLabel = target.dataset.colLabel || 'Detalle';
+    if (!fullText) return;
+
+    const contentEl = document.getElementById('globalCellTooltipContent');
+    const labelEl = document.getElementById('globalCellTooltipLabel');
+    if (contentEl) contentEl.textContent = fullText;
+    if (labelEl) labelEl.textContent = colLabel;
+
+    tooltip.classList.remove('hidden');
+
+    const rect = target.getBoundingClientRect();
+    const tipWidth = Math.min(380, window.innerWidth - 30);
+    tooltip.style.width = tipWidth + 'px';
+
+    let left = rect.left;
+    if (left + tipWidth > window.innerWidth - 15) {
+      left = window.innerWidth - tipWidth - 15;
+    }
+    if (left < 10) left = 10;
+
+    let top = rect.bottom + 8;
+    const estHeight = tooltip.offsetHeight || 130;
+    if (top + estHeight > window.innerHeight - 15) {
+      top = Math.max(10, rect.top - 10 - estHeight);
+    }
+
+    tooltip.style.left = left + 'px';
+    tooltip.style.top = top + 'px';
+  });
+
+  document.addEventListener('mouseout', function(e) {
+    const target = e.target.closest('.cell-hover-popover');
+    const tooltip = document.getElementById('globalCellTooltip');
+    if (target && tooltip) {
+      tooltip.classList.add('hidden');
+    }
   });
 }
 
@@ -4137,8 +4297,8 @@ window.exportTvEventsToExcel = function() {
     'Impacto (Col. M)': r.impact || '',
     'Acción de Contención (Col. N)': r.containmentAction || '',
     'Acción Correctiva (Col. O)': r.correctiveAction || '',
-    'Considerar que (Col. R)': r.considerations || '',
-    'URL Evidencias (Col. Q)': (r.urls || []).join(' , ')
+    'Considerar que (Col. R)': (r.observations || r.considerations || ''),
+    'URL Evidencias (Col. Q)': getTvEventUrls(r).join(' , ')
   }));
 
   const now = new Date();

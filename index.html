@@ -2325,13 +2325,30 @@
 
               <!-- Tabla buscador de Eventos TV -->
               <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white" aria-labelledby="tvEventsTableTitle">
+                <div id="tvEventsMdrBanner" class="hidden border-b border-rose-200 bg-rose-50/90 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+                  <div class="flex items-center gap-2 text-xs text-rose-900">
+                    <span class="flex h-5 w-5 items-center justify-center rounded-full bg-rose-600 text-[11px] text-white font-black animate-pulse">!</span>
+                    <span>
+                      <strong>Alerta de Reclamo MDR:</strong> Se detectaron <span id="tvEventsMdrBannerCount" class="font-black underline">0</span> eventos que requieren gestión de MDR (en Defecto, Impacto, Contención o Correctiva).
+                    </span>
+                  </div>
+                  <button type="button" onclick="window.toggleTvEventsMdrOnly()" class="rounded-lg bg-rose-600 px-3 py-1 text-[11px] font-bold text-white shadow-xs hover:bg-rose-700 transition cursor-pointer">
+                    Ver pendientes de MDR
+                  </button>
+                </div>
                 <div class="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h4 id="tvEventsTableTitle" class="text-sm font-extrabold text-slate-900">Listado y Trazabilidad de Eventos TV</h4>
-                    <p class="mt-0.5 text-[10px] text-slate-500">Columna V: N° de evento · Columna Q: URL de evidencias en Drive / Docs.</p>
+                    <div class="flex items-center gap-2.5">
+                      <h4 id="tvEventsTableTitle" class="text-sm font-extrabold text-slate-900">Eventos TV</h4>
+                      <button id="btnTvEventsFilterMdr" type="button" onclick="window.toggleTvEventsMdrOnly()" title="Filtrar eventos con requerimiento de reclamo MDR" class="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-extrabold text-rose-700 shadow-2xs transition hover:bg-rose-100 hover:border-rose-300 cursor-pointer">
+                        <span class="flex h-2 w-2 rounded-full bg-rose-600 animate-pulse"></span>
+                        <span id="tvEventsMdrCountBadge">MDR (0)</span>
+                      </button>
+                    </div>
+                    <p class="mt-0.5 text-[10px] text-slate-500">Columna V: N° de evento · Columna Q: URL fotos · Pasa el cursor sobre cualquier celda extensa para leer el texto completo.</p>
                   </div>
                   <div class="flex w-full flex-col gap-2 sm:max-w-2xl sm:flex-row sm:items-center sm:justify-end">
-                    <input id="tvEventsSearchInput" type="search" placeholder="Buscar N° evento (Col. V), modelo, chasis, lote, defecto, P/N..." class="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-800 outline-none transition focus:border-red-400 focus:ring-2 focus:ring-red-100" aria-label="Buscar en eventos TV">
+                    <input id="tvEventsSearchInput" type="search" placeholder="Buscar N° evento, modelo, defecto, MDR, P/N..." class="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-800 outline-none transition focus:border-red-400 focus:ring-2 focus:ring-red-100" aria-label="Buscar en eventos TV">
                     <span id="tvEventsSearchCount" class="whitespace-nowrap text-[10px] font-semibold text-slate-500"></span>
                     <button type="button" onclick="window.exportTvEventsToExcel()" title="Descargar eventos filtrados en Excel" class="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-left shadow-xs transition hover:border-emerald-400 hover:bg-emerald-50 shrink-0 cursor-pointer">
                       <svg class="h-5 w-5 shrink-0 rounded" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -2343,22 +2360,25 @@
                   </div>
                 </div>
                 <div class="max-h-[560px] overflow-auto">
-                  <table class="w-full min-w-[1100px] text-left text-xs">
-                    <thead class="sticky top-0 border-b border-slate-200 bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-500 z-10">
+                  <table class="w-full min-w-[1400px] text-left text-xs">
+                    <thead class="sticky top-0 border-b border-slate-200 bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-500 z-10 shadow-xs">
                       <tr>
-                        <th class="px-3 py-3">N° Evento (V)</th>
-                        <th class="px-3 py-3">Fecha</th>
-                        <th class="px-3 py-3">Modelo (C)</th>
-                        <th class="px-3 py-3">Proveedor (E)</th>
-                        <th class="px-3 py-3">Chasis (F) · Lote</th>
-                        <th class="px-3 py-3">Tipo NC · Área</th>
-                        <th class="px-3 py-3">Defecto / Consideración</th>
-                        <th class="px-3 py-3">Evidencia URL (Q)</th>
-                        <th class="px-3 py-3 text-right">Detalle</th>
+                        <th class="px-3 py-3 w-28">N° Evento (V)</th>
+                        <th class="px-3 py-3 min-w-[130px]">Modelo (C)</th>
+                        <th class="px-3 py-3 w-28">Tipo NC (H)</th>
+                        <th class="px-3 py-3 w-28">P/N (I)</th>
+                        <th class="px-3 py-3 min-w-[190px]">Defecto / Problema (K)</th>
+                        <th class="px-3 py-3 w-28">Área (L)</th>
+                        <th class="px-3 py-3 min-w-[180px]">Impacto (M)</th>
+                        <th class="px-3 py-3 min-w-[190px]">Acción Contención (N)</th>
+                        <th class="px-3 py-3 min-w-[190px]">Acción Correctiva (O)</th>
+                        <th class="px-3 py-3 w-28">Fotos URL (Q)</th>
+                        <th class="px-3 py-3 min-w-[180px]">Observaciones (R)</th>
+                        <th class="px-3 py-3 w-20 text-right">Detalle</th>
                       </tr>
                     </thead>
                     <tbody id="tvEventsTableBody" class="divide-y divide-slate-100">
-                      <tr><td colspan="9" class="px-3 py-8 text-center text-slate-400">Cargando eventos de TV...</td></tr>
+                      <tr><td colspan="12" class="px-3 py-8 text-center text-slate-400">Cargando eventos de TV...</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -2865,7 +2885,7 @@
   </div>
 
   <!-- Scripts -->
-  <script src="app.js?v=20261110-clean-line-labels"></script>
+  <script src="app.js?v=20261110-eventos-tv-mdr-tooltip"></script>
 
   <!-- MODAL: ASIGNACIÓN DE LÍNEAS A AUDITORES -->
   <div id="lineAuditorModal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
@@ -2899,5 +2919,14 @@
     </div>
   </div>
 
+
+  <!-- TOOLTIP FLOTANTE GLOBAL PARA TEXTOS LARGOS -->
+  <div id="globalCellTooltip" class="fixed pointer-events-none z-[9999] hidden max-w-md rounded-xl border border-slate-700 bg-slate-900/95 p-3 text-xs leading-relaxed text-white shadow-2xl backdrop-blur-md transition-opacity duration-150">
+    <div id="globalCellTooltipHeader" class="text-[10px] font-bold uppercase tracking-wider text-red-400 border-b border-slate-700/80 pb-1 mb-1.5 flex items-center justify-between">
+      <span id="globalCellTooltipLabel">Detalle</span>
+      <span class="text-[9px] text-slate-400 font-normal">Texto completo</span>
+    </div>
+    <div id="globalCellTooltipContent" class="max-h-64 overflow-y-auto whitespace-pre-wrap font-normal text-slate-100 text-[11px] leading-relaxed"></div>
+  </div>
 </body>
 </html>
