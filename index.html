@@ -2885,7 +2885,49 @@
   </div>
 
   <!-- Scripts -->
-  <script src="app.js?v=20261110-eventos-tv-mdr-tooltip"></script>
+  <script src="app.js?v=20261110-eventos-carousel-ficha"></script>
+
+  <!-- MODAL: VISOR CARRUSEL DE FOTOS DE EVENTOS TV -->
+  <div id="tvPhotoCarouselModal" class="fixed inset-0 z-[100] hidden items-center justify-center bg-slate-950/85 p-3 sm:p-6 backdrop-blur-sm" onclick="if(event.target===this) window.closeTvPhotoCarousel()">
+    <div class="relative flex h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-700/80 bg-slate-900 text-white shadow-2xl">
+      <!-- Header -->
+      <div class="flex items-center justify-between border-b border-slate-800 px-4 py-3 sm:px-5">
+        <div class="min-w-0 pr-3">
+          <div class="flex items-center gap-2">
+            <span class="rounded-md bg-sky-500/20 border border-sky-400/30 px-2 py-0.5 text-[11px] font-black text-sky-300" id="tvCarouselBadge">Foto 1 de 1</span>
+            <h3 id="tvCarouselTitle" class="truncate text-sm font-extrabold text-white">Evidencias del Evento</h3>
+          </div>
+          <p id="tvCarouselSubtitle" class="mt-0.5 truncate text-[11px] text-slate-400"></p>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <a id="tvCarouselExternalLink" href="#" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-200 hover:bg-slate-700 hover:text-white transition">
+            Abrir original ↗
+          </a>
+          <button type="button" onclick="window.closeTvPhotoCarousel()" class="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-800 text-slate-300 hover:bg-rose-600 hover:text-white transition cursor-pointer" title="Cerrar (Esc)">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <!-- Main Stage -->
+      <div class="relative flex flex-1 items-center justify-center overflow-hidden bg-slate-950/60 p-4">
+        <button id="tvCarouselPrevBtn" type="button" onclick="window.stepTvPhotoCarousel(-1)" class="absolute left-3 z-20 flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-slate-900/80 text-white shadow-lg backdrop-blur-xs transition hover:bg-red-600 hover:scale-105 cursor-pointer" title="Anterior (←)">
+          <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+        </button>
+
+        <div id="tvCarouselStage" class="flex h-full w-full items-center justify-center overflow-hidden px-12">
+        </div>
+
+        <button id="tvCarouselNextBtn" type="button" onclick="window.stepTvPhotoCarousel(1)" class="absolute right-3 z-20 flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-slate-900/80 text-white shadow-lg backdrop-blur-xs transition hover:bg-red-600 hover:scale-105 cursor-pointer" title="Siguiente (→)">
+          <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+        </button>
+      </div>
+
+      <!-- Footer Dots / Selector -->
+      <div id="tvCarouselDots" class="flex items-center justify-center gap-2 border-t border-slate-800 bg-slate-900 px-4 py-3 overflow-x-auto">
+      </div>
+    </div>
+  </div>
 
   <!-- MODAL: ASIGNACIÓN DE LÍNEAS A AUDITORES -->
   <div id="lineAuditorModal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">

@@ -4081,31 +4081,26 @@ function renderTvEventsTable(records) {
     // 9. Acción Correctiva (Col O)
     const tdCorrective = createTvEventTextCell(record.correctiveAction, 'Acción Correctiva (Col. O)', 'max-w-[220px]');
 
-    // 10. URL Fotos / Evidencia (Col Q)
+    // 10. URL Fotos / Evidencia (Col Q) - Botón compacto con ícono de foto + visor carrusel
     const tdUrls = document.createElement('td');
-    tdUrls.className = 'px-3 py-2.5 align-top';
+    tdUrls.className = 'px-3 py-2.5 align-top whitespace-nowrap';
     const urls = getTvEventUrls(record);
     if (urls.length > 0) {
-      const wrap = document.createElement('div');
-      wrap.className = 'flex flex-wrap gap-1';
-      urls.forEach((rawUrl, idx) => {
-        try {
-          const parsed = new URL(rawUrl);
-          if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-            const a = document.createElement('a');
-            a.href = parsed.href;
-            a.target = '_blank';
-            a.rel = 'noopener noreferrer';
-            a.className = 'inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-700 transition hover:border-sky-400 hover:bg-sky-100';
-            a.textContent = urls.length === 1 ? 'Ver Foto' : `Foto ${idx + 1}`;
-            a.title = parsed.href;
-            wrap.appendChild(a);
-          }
-        } catch (e) {}
-      });
-      tdUrls.appendChild(wrap);
+      const camBtn = document.createElement('button');
+      camBtn.type = 'button';
+      camBtn.className = 'inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-xs font-bold text-sky-700 shadow-2xs transition hover:border-sky-400 hover:bg-sky-100 cursor-pointer';
+      camBtn.title = `Ver ${urls.length} foto${urls.length > 1 ? 's' : ''} en carrusel`;
+      camBtn.innerHTML = `
+        <svg class="h-4 w-4 text-sky-600 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+          <circle cx="12" cy="13" r="3"/>
+        </svg>
+        <span>${urls.length}</span>
+      `;
+      camBtn.addEventListener('click', () => window.openTvPhotoCarousel(record, 0));
+      tdUrls.appendChild(camBtn);
     } else {
-      tdUrls.innerHTML = '<span class="text-slate-300 text-[11px] italic">Sin link</span>';
+      tdUrls.innerHTML = '<span class="text-slate-300 text-[11px] italic">Sin foto</span>';
     }
 
     // 11. Observaciones / Consideraciones (Col R)
@@ -4197,26 +4192,29 @@ window.openTvEventDetailModal = function(record) {
   const body = document.getElementById('tvEventDetailBody');
   if (!modal || !badge || !title || !meta || !body) return;
 
-  badge.textContent = `Evento #${record.eventNumber !== '' ? record.eventNumber : 'S/N'} (Columna V)`;
-  title.textContent = `${record.model || 'Sin modelo'} · ${record.supplier || 'Sin proveedor'}`;
-  meta.textContent = `Fecha: ${record.timestamp || record.date || '—'} · Chasis: ${record.chassis || '—'} · Lote: ${record.lot || '—'} · Registró: ${record.email || '—'}`;
+  badge.textContent = `Evento #${record.eventNumber !== '' ? record.eventNumber : 'S/N'} (Col. V)`;
+  title.textContent = `${record.model || 'Sin modelo'}`;
+  meta.textContent = `Fecha: ${record.date || record.timestamp || '—'}${record.responsibleArea ? ' · Área: ' + record.responsibleArea : ''}`;
 
   body.replaceChildren();
 
+  if (checkTvEventHasMdr(record)) {
+    const mdrBox = document.createElement('div');
+    mdrBox.className = 'rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-2.5 flex items-center gap-2.5 text-xs text-rose-900 font-bold';
+    mdrBox.innerHTML = '<span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rose-600 text-[11px] font-black text-white">!</span><span>Alerta de Reclamo MDR detectada (Defecto, Impacto, Contención o Correctiva).</span>';
+    body.appendChild(mdrBox);
+  }
+
+  // Mostrar únicamente los campos operativos relevantes de calidad
   const fields = [
     { label: 'Tipo de No Conformidad (Col. H)', value: record.ncType },
-    { label: 'Área responsable (Col. L)', value: record.responsibleArea },
-    { label: 'Otros modelos a los que aplica (Col. D)', value: record.otherModels },
     { label: 'Part Number / P/N (Col. I)', value: record.partNumber },
-    { label: 'Proveedor de material (Col. J)', value: record.materialSupplier },
-    { label: 'Semi elaborado (Col. S)', value: record.semiFinished },
-    { label: 'Defecto / Problema detectado (Col. K)', value: record.defect },
-    { label: 'Considerar que (Col. R)', value: record.considerations },
-    { label: 'Impacto en línea / producción (Col. M)', value: record.impact },
+    { label: 'Área responsable (Col. L)', value: record.responsibleArea },
+    { label: 'Defecto / Problema (Col. K)', value: record.defect },
+    { label: 'Impacto en línea (Col. M)', value: record.impact },
     { label: 'Acción de contención (Col. N)', value: record.containmentAction },
-    { label: 'Acción correctiva y responsable (Col. O)', value: record.correctiveAction },
-    { label: 'Contactos a considerar (Col. P)', value: record.contacts },
-    { label: 'Cumplimiento de acción (Col. T)', value: record.actionCompliance }
+    { label: 'Acción correctiva (Col. O)', value: record.correctiveAction },
+    { label: 'Observaciones / Consideraciones (Col. R)', value: record.observations || record.considerations }
   ];
 
   fields.forEach(item => {
@@ -4233,31 +4231,30 @@ window.openTvEventDetailModal = function(record) {
     body.appendChild(box);
   });
 
-  if (Array.isArray(record.urls) && record.urls.length > 0) {
+  const urls = getTvEventUrls(record);
+  if (urls.length > 0) {
     const urlBox = document.createElement('div');
-    urlBox.className = 'rounded-xl border border-sky-100 bg-sky-50/60 p-3';
+    urlBox.className = 'rounded-xl border border-sky-100 bg-sky-50/60 p-3 flex flex-wrap items-center justify-between gap-3';
+    const infoWrap = document.createElement('div');
     const lbl = document.createElement('p');
     lbl.className = 'text-[10px] font-extrabold uppercase tracking-wider text-sky-700';
-    lbl.textContent = `Evidencias / Archivos en Columna Q (${record.urls.length})`;
-    const linksWrap = document.createElement('div');
-    linksWrap.className = 'mt-2 flex flex-wrap gap-2';
-    record.urls.forEach((rawUrl, i) => {
-      try {
-        const parsed = new URL(rawUrl);
-        if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-          const a = document.createElement('a');
-          a.href = parsed.href;
-          a.target = '_blank';
-          a.rel = 'noopener noreferrer';
-          a.className = 'inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-white px-3 py-1.5 text-xs font-bold text-sky-800 shadow-2xs hover:border-sky-400 hover:bg-sky-50';
-          a.textContent = `Abrir Evidencia ${i + 1} ↗`;
-          linksWrap.appendChild(a);
-        }
-      } catch (e) {
-        // ignore invalid url
-      }
+    lbl.textContent = `Fotos / Evidencias en Columna Q (${urls.length})`;
+    infoWrap.appendChild(lbl);
+
+    const actionsWrap = document.createElement('div');
+    actionsWrap.className = 'flex flex-wrap items-center gap-2';
+
+    const carouselBtn = document.createElement('button');
+    carouselBtn.type = 'button';
+    carouselBtn.className = 'inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-sky-700 transition cursor-pointer';
+    carouselBtn.innerHTML = '📷 Abrir Carrusel de Fotos';
+    carouselBtn.addEventListener('click', () => {
+      window.closeTvEventDetailModal();
+      window.openTvPhotoCarousel(record, 0);
     });
-    urlBox.append(lbl, linksWrap);
+    actionsWrap.appendChild(carouselBtn);
+
+    urlBox.append(infoWrap, actionsWrap);
     body.appendChild(urlBox);
   }
 
@@ -4271,6 +4268,165 @@ window.closeTvEventDetailModal = function() {
   modal.classList.add('hidden');
   modal.classList.remove('flex');
 };
+
+// ==========================================
+// CARRUSEL DE FOTOS / EVIDENCIAS (COL. Q)
+// ==========================================
+let tvCarouselState = {
+  record: null,
+  urls: [],
+  index: 0
+};
+
+function extractGoogleDriveFileId(url) {
+  if (!url) return null;
+  let m = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (m) return m[1];
+  m = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return m[1];
+  m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return m[1];
+  return null;
+}
+
+window.openTvPhotoCarousel = function(record, startIndex = 0) {
+  const urls = getTvEventUrls(record);
+  if (!urls.length) return;
+
+  tvCarouselState.record = record;
+  tvCarouselState.urls = urls;
+  tvCarouselState.index = Math.max(0, Math.min(startIndex, urls.length - 1));
+
+  const modal = document.getElementById('tvPhotoCarouselModal');
+  const titleEl = document.getElementById('tvCarouselTitle');
+  const subEl = document.getElementById('tvCarouselSubtitle');
+
+  if (titleEl) {
+    titleEl.textContent = `Evento #${record.eventNumber !== '' ? record.eventNumber : 'S/N'} · ${record.model || 'Sin modelo'}`;
+  }
+  if (subEl) {
+    subEl.textContent = record.defect || record.observations || 'Evidencias fotográficas en Google Drive';
+  }
+
+  if (modal) {
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+  }
+  window.renderTvCarouselSlide();
+};
+
+window.closeTvPhotoCarousel = function() {
+  const modal = document.getElementById('tvPhotoCarouselModal');
+  const stage = document.getElementById('tvCarouselStage');
+  if (modal) {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }
+  if (stage) stage.replaceChildren();
+};
+
+window.stepTvPhotoCarousel = function(delta) {
+  if (!tvCarouselState.urls.length) return;
+  const total = tvCarouselState.urls.length;
+  tvCarouselState.index = (tvCarouselState.index + delta + total) % total;
+  window.renderTvCarouselSlide();
+};
+
+window.renderTvCarouselSlide = function() {
+  const { urls, index } = tvCarouselState;
+  if (!urls.length) return;
+
+  const currentUrl = urls[index];
+  const fileId = extractGoogleDriveFileId(currentUrl);
+
+  const badge = document.getElementById('tvCarouselBadge');
+  const extLink = document.getElementById('tvCarouselExternalLink');
+  const stage = document.getElementById('tvCarouselStage');
+  const prevBtn = document.getElementById('tvCarouselPrevBtn');
+  const nextBtn = document.getElementById('tvCarouselNextBtn');
+  const dots = document.getElementById('tvCarouselDots');
+
+  if (badge) badge.textContent = `Foto ${index + 1} de ${urls.length}`;
+  if (extLink) extLink.href = currentUrl;
+  if (prevBtn) prevBtn.classList.toggle('hidden', urls.length <= 1);
+  if (nextBtn) nextBtn.classList.toggle('hidden', urls.length <= 1);
+
+  if (stage) {
+    stage.replaceChildren();
+    const loaderDiv = document.createElement('div');
+    loaderDiv.className = 'text-xs text-slate-400 animate-pulse';
+    loaderDiv.textContent = 'Cargando imagen...';
+    stage.appendChild(loaderDiv);
+
+    if (fileId) {
+      const img = document.createElement('img');
+      img.src = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1600`;
+      img.alt = `Evidencia ${index + 1}`;
+      img.className = 'max-h-full max-w-full rounded-lg object-contain shadow-2xl transition-opacity duration-200 hidden';
+      img.onload = () => {
+        loaderDiv.remove();
+        img.classList.remove('hidden');
+      };
+      img.onerror = () => {
+        loaderDiv.remove();
+        img.remove();
+        // Fallback a iframe preview de Google Drive (funciona con sesión Drive o PDFs/documentos)
+        const iframe = document.createElement('iframe');
+        iframe.src = `https://drive.google.com/file/d/${fileId}/preview`;
+        iframe.className = 'h-full w-full max-w-4xl rounded-xl border border-slate-700 bg-white';
+        iframe.allow = 'autoplay';
+        stage.appendChild(iframe);
+      };
+      stage.appendChild(img);
+    } else {
+      const img = document.createElement('img');
+      img.src = currentUrl;
+      img.alt = `Evidencia ${index + 1}`;
+      img.className = 'max-h-full max-w-full rounded-lg object-contain shadow-2xl hidden';
+      img.onload = () => {
+        loaderDiv.remove();
+        img.classList.remove('hidden');
+      };
+      img.onerror = () => {
+        loaderDiv.remove();
+        stage.innerHTML = `<div class="text-center space-y-3"><p class="text-xs text-slate-300">No se pudo previsualizar este enlace directamente.</p><a href="${currentUrl}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-xs font-bold text-white hover:bg-sky-700">Abrir en nueva pestaña ↗</a></div>`;
+      };
+      stage.appendChild(img);
+    }
+  }
+
+  if (dots) {
+    dots.replaceChildren();
+    urls.forEach((u, i) => {
+      const dotBtn = document.createElement('button');
+      dotBtn.type = 'button';
+      dotBtn.className = i === index
+        ? 'rounded-lg bg-sky-600 px-3 py-1 text-xs font-black text-white shadow-sm cursor-pointer'
+        : 'rounded-lg bg-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-400 hover:bg-slate-700 hover:text-white cursor-pointer transition';
+      dotBtn.textContent = `Foto ${i + 1}`;
+      dotBtn.addEventListener('click', () => {
+        tvCarouselState.index = i;
+        window.renderTvCarouselSlide();
+      });
+      dots.appendChild(dotBtn);
+    });
+  }
+};
+
+if (!window.__tvCarouselKeyBound) {
+  window.__tvCarouselKeyBound = true;
+  document.addEventListener('keydown', function(e) {
+    const modal = document.getElementById('tvPhotoCarouselModal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    if (e.key === 'Escape') {
+      window.closeTvPhotoCarousel();
+    } else if (e.key === 'ArrowLeft') {
+      window.stepTvPhotoCarousel(-1);
+    } else if (e.key === 'ArrowRight') {
+      window.stepTvPhotoCarousel(1);
+    }
+  });
+}
 
 window.exportTvEventsToExcel = function() {
   const matches = getFilteredTvEvents().sort(compareTvEventsNewestFirst);
