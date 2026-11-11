@@ -2889,7 +2889,7 @@
   </div>
 
   <!-- Scripts -->
-  <script src="app.js?v=20261110-audit-history-mdr-today"></script>
+  <script src="app.js?v=20261110-minimal-confirm"></script>
 
   <!-- MODAL: VISOR CARRUSEL DE FOTOS DE EVENTOS TV -->
   <div id="tvPhotoCarouselModal" class="fixed inset-0 z-[100] hidden items-center justify-center bg-slate-950/85 p-3 sm:p-6 backdrop-blur-sm" onclick="if(event.target===this) window.closeTvPhotoCarousel()">
@@ -2991,6 +2991,30 @@
         <span id="auditDetailModalFooterInfo" class="text-[11px] font-medium text-slate-500">Fuente: BBDD de Auditorías</span>
         <button type="button" onclick="window.closeAuditFormDetailModal()" class="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-slate-800 transition-colors cursor-pointer">
           Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- MODAL: CONFIRMACIÓN MINIMALISTA -->
+  <div id="minimalConfirmModal" class="fixed inset-0 z-[90] hidden flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+    <div class="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-start gap-3">
+        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600 border border-rose-100">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+        </div>
+        <div class="min-w-0 flex-1">
+          <h3 id="minimalConfirmTitle" class="text-sm font-bold text-slate-900">Confirmar acción</h3>
+          <p id="minimalConfirmMessage" class="mt-1 text-xs leading-relaxed text-slate-500">¿Estás seguro?</p>
+        </div>
+      </div>
+      <div class="mt-5 flex items-center justify-end gap-2">
+        <button id="minimalConfirmCancelBtn" type="button" class="rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer">
+          Cancelar
+        </button>
+        <button id="minimalConfirmAcceptBtn" type="button" class="rounded-xl bg-rose-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-rose-700 transition-colors cursor-pointer">
+          Eliminar
         </button>
       </div>
     </div>

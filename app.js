@@ -4859,7 +4859,12 @@ async function deleteQualityTeamMember(memberId, fullName) {
     showToast('Solo los administradores pueden modificar el equipo.');
     return;
   }
-  if (!window.confirm(`¿Eliminar a ${fullName} del equipo de Calidad?`)) return;
+  const confirmed = await window.showMinimalConfirmModal({
+    title: 'Eliminar integrante',
+    message: `¿Eliminar a ${fullName} del equipo de Calidad?`,
+    confirmLabel: 'Eliminar'
+  });
+  if (!confirmed) return;
   try {
     await requestAuthApi(`/api/quality-team/${encodeURIComponent(memberId)}`, { method: 'DELETE' });
     await loadQualityTeamMembers();
@@ -5031,7 +5036,12 @@ window.deleteUserAccount = async function(username) {
     showToast('No podés eliminar el usuario de la sesión actual.');
     return;
   }
-  if (!window.confirm(`¿Eliminar el usuario ${username} del sistema compartido?`)) return;
+  const confirmed = await window.showMinimalConfirmModal({
+    title: 'Eliminar usuario',
+    message: `¿Eliminar el usuario ${username} del sistema compartido?`,
+    confirmLabel: 'Eliminar'
+  });
+  if (!confirmed) return;
   try {
     await requestAuthApi(`/api/admin/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
   } catch (error) {
@@ -9215,7 +9225,12 @@ window.exportAuditReportPdf = function() {
 };
 
 window.deleteScreenValidationRecord = async function(id) {
-  if (!confirm('¿Estás seguro de que deseás eliminar este registro de validación?')) return;
+  const confirmed = await window.showMinimalConfirmModal({
+    title: 'Eliminar validación',
+    message: '¿Estás seguro de que deseás eliminar este registro de validación?',
+    confirmLabel: 'Eliminar'
+  });
+  if (!confirmed) return;
   try {
     const res = await requestAuthApi(`/api/screen-validations/${encodeURIComponent(id)}`, {
       method: 'DELETE'
@@ -9224,7 +9239,7 @@ window.deleteScreenValidationRecord = async function(id) {
     await loadScreenValidationRecords();
   } catch (err) {
     console.error('Error al eliminar validación:', err);
-    alert(err.message || 'No se pudo eliminar el registro.');
+    showToast(err.message || 'No se pudo eliminar el registro.', 'error');
   }
 };
 
@@ -9628,3 +9643,56 @@ document.addEventListener('keydown', (e) => {
     }
   }
 });
+
+
+// ==========================================
+// DIÁLOGO DE CONFIRMACIÓN MINIMALISTA
+// ==========================================
+window.showMinimalConfirmModal = function(options = {}) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('minimalConfirmModal');
+    const titleEl = document.getElementById('minimalConfirmTitle');
+    const msgEl = document.getElementById('minimalConfirmMessage');
+    const cancelBtn = document.getElementById('minimalConfirmCancelBtn');
+    const acceptBtn = document.getElementById('minimalConfirmAcceptBtn');
+
+    if (!modal || !cancelBtn || !acceptBtn) {
+      resolve(window.confirm(options.message || '¿Confirmás esta acción?'));
+      return;
+    }
+
+    if (titleEl) titleEl.textContent = options.title || 'Confirmar acción';
+    if (msgEl) msgEl.textContent = options.message || '¿Estás seguro de que deseás continuar?';
+    acceptBtn.textContent = options.confirmLabel || 'Aceptar';
+
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      modal.classList.add('hidden');
+      cancelBtn.removeEventListener('click', onCancel);
+      acceptBtn.removeEventListener('click', onAccept);
+      modal.removeEventListener('click', onBackdrop);
+      document.removeEventListener('keydown', onKeyDown);
+      resolve(result);
+    };
+
+    const onCancel = () => finish(false);
+    const onAccept = () => finish(true);
+    const onBackdrop = (e) => { if (e.target === modal) finish(false); };
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        finish(false);
+      }
+    };
+
+    cancelBtn.addEventListener('click', onCancel);
+    acceptBtn.addEventListener('click', onAccept);
+    modal.addEventListener('click', onBackdrop);
+    document.addEventListener('keydown', onKeyDown);
+
+    modal.classList.remove('hidden');
+    cancelBtn.focus();
+  });
+};
