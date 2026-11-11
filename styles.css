@@ -79,6 +79,7 @@ body {
   color: #64748b;
   font-size: 0.75rem;
   text-align: left;
+  cursor: pointer;
   transition: all 0.15s ease-in-out;
 }
 
@@ -88,7 +89,7 @@ body {
 }
 
 .nav-subitem.active {
-  background-color: #fff1f2;
+  background-color: #ffe3e5;
   color: #e30613;
   font-weight: 600;
 }

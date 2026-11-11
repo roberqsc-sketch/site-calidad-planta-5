@@ -55,7 +55,7 @@
   </script>
 
   <!-- Google Fonts & Custom CSS -->
-  <link rel="stylesheet" href="styles.css?v=20261104-iqc-validation-mail">
+  <link rel="stylesheet" href="styles.css?v=20261110-sidebar-dropdowns">
 </head>
 <body class="bg-[#f8fafc] text-slate-800 antialiased min-h-screen flex flex-col">
 
@@ -161,12 +161,16 @@
             Operaciones
           </div>
           <nav class="space-y-1">
-            <button class="nav-pill" data-view="iqc" data-submenu-toggle="iqcSubmenu" aria-expanded="false" aria-controls="iqcSubmenu">
+            <button class="nav-pill" data-submenu-toggle="iqcSubmenu" aria-expanded="false" aria-controls="iqcSubmenu">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
               <span>IQC Recepción</span>
               <svg class="ml-auto h-4 w-4 transition-transform" data-submenu-chevron="iqcSubmenu" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m6 9 6 6 6-6"/></svg>
             </button>
             <div id="iqcSubmenu" class="hidden ml-4 space-y-1 border-l border-slate-200 pl-2" aria-label="Subprocesos de IQC">
+              <button class="nav-subitem" data-view="iqc">
+                <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                <span>Inspección de ingreso</span>
+              </button>
               <button class="nav-subitem" data-view="etiquetas">
                 <svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7.5 3h6.879a2 2 0 011.414.586l4.621 4.621a2 2 0 01.586 1.414V17a4 4 0 01-4 4h-9.5a4 4 0 01-4-4V7a4 4 0 014-4z"/><circle cx="9" cy="9" r="1.5"/></svg>
                 <span>Validación de etiquetas</span>
@@ -184,7 +188,7 @@
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5h8m-8 4h8m-8 4h5m-8 7h14a2 2 0 002-2V6a2 2 0 00-2-2h-4l-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
               <span>Reclamos a Automática</span>
             </button>
-            <button class="nav-pill" data-view="reportes" data-submenu-toggle="reportesSubmenu" aria-expanded="false" aria-controls="reportesSubmenu">
+            <button class="nav-pill" data-submenu-toggle="reportesSubmenu" aria-expanded="false" aria-controls="reportesSubmenu">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
               <span>Reportes</span>
               <svg class="ml-auto h-4 w-4 transition-transform" data-submenu-chevron="reportesSubmenu" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m6 9 6 6 6-6"/></svg>
@@ -212,7 +216,7 @@
             Documentación
           </div>
           <nav class="space-y-1">
-            <button class="nav-pill" data-view="documentacion" data-submenu-toggle="documentationSubmenu" aria-expanded="false" aria-controls="documentationSubmenu">
+            <button class="nav-pill" data-submenu-toggle="documentationSubmenu" aria-expanded="false" aria-controls="documentationSubmenu">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
               <span>Documentación</span>
               <svg class="ml-auto h-4 w-4 transition-transform" data-submenu-chevron="documentationSubmenu" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m6 9 6 6 6-6"/></svg>
@@ -2885,7 +2889,7 @@
   </div>
 
   <!-- Scripts -->
-  <script src="app.js?v=20261110-eventos-carousel-ficha"></script>
+  <script src="app.js?v=20261110-sidebar-dropdowns"></script>
 
   <!-- MODAL: VISOR CARRUSEL DE FOTOS DE EVENTOS TV -->
   <div id="tvPhotoCarouselModal" class="fixed inset-0 z-[100] hidden items-center justify-center bg-slate-950/85 p-3 sm:p-6 backdrop-blur-sm" onclick="if(event.target===this) window.closeTvPhotoCarousel()">

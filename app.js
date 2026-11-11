@@ -5245,24 +5245,30 @@ function initClock() {
 // 7. NAVEGACIÓN SIDEBAR (NAV-PILL)
 // ==========================================
 function initTopNavigation() {
+  // Botones directos de navegación (incluyendo sub-ítems)
   const navBtns = document.querySelectorAll('.nav-pill[data-view], .nav-subitem[data-view]');
   navBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       const view = btn.getAttribute('data-view');
       if (!view) return;
-
-      const shouldCollapseSubmenu =
-        btn.hasAttribute('data-submenu-toggle') && btn.getAttribute('aria-expanded') === 'true';
       updateSidebarNavigation(view);
-      if (shouldCollapseSubmenu) {
-        const submenu = document.getElementById(btn.getAttribute('data-submenu-toggle'));
-        const chevron = document.querySelector(`[data-submenu-chevron="${btn.getAttribute('data-submenu-toggle')}"]`);
-        submenu?.classList.add('hidden');
-        btn.setAttribute('aria-expanded', 'false');
-        chevron?.classList.remove('rotate-180');
-      }
-
       switchView(view);
+    });
+  });
+
+  // Botones carpeta desplegable pura (solo abren/cierran su submenú sin cambiar de pantalla)
+  const toggleBtns = document.querySelectorAll('.nav-pill[data-submenu-toggle]:not([data-view])');
+  toggleBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const submenuId = btn.getAttribute('data-submenu-toggle');
+      const submenu = document.getElementById(submenuId);
+      const chevron = document.querySelector(`[data-submenu-chevron="${submenuId}"]`);
+      if (!submenu) return;
+
+      const isCurrentlyHidden = submenu.classList.contains('hidden');
+      submenu.classList.toggle('hidden', !isCurrentlyHidden);
+      btn.setAttribute('aria-expanded', String(isCurrentlyHidden));
+      chevron?.classList.toggle('rotate-180', isCurrentlyHidden);
     });
   });
 }
@@ -5271,45 +5277,42 @@ function updateSidebarNavigation(viewName) {
   if (viewName === 'validacion-pantallas' && !isAdministrator()) {
     viewName = 'dashboard';
   }
+  if (viewName === 'reportes') {
+    viewName = 'reportes-auditorias';
+  }
+
   const navBtns = document.querySelectorAll('.nav-pill[data-view], .nav-subitem[data-view]');
-  const iqcSubMenuViews = new Set(['etiquetas', 'validacion-pantallas']);
-  const documentationSubMenuViews = new Set(['documentacion-manuales', 'documentacion-instructivos']);
+  const iqcSubMenuViews = new Set(['iqc', 'etiquetas', 'validacion-pantallas']);
+  const documentationSubMenuViews = new Set(['documentacion', 'documentacion-manuales', 'documentacion-instructivos']);
   const reportesSubMenuViews = new Set(['reportes-auditorias', 'reportes-eventos']);
+
+  // Ilumina en rojo ÚNICAMENTE el botón/sub-ítem exacto seleccionado
   navBtns.forEach(btn => {
     btn.classList.toggle('active', btn.getAttribute('data-view') === viewName);
   });
 
-  const iqcButton = document.querySelector('.nav-pill[data-view="iqc"]');
-  const iqcSubmenu = document.getElementById('iqcSubmenu');
-  const iqcChevron = document.querySelector('[data-submenu-chevron="iqcSubmenu"]');
-  const isIqcView = viewName === 'iqc' || iqcSubMenuViews.has(viewName);
-  iqcButton?.classList.toggle('active', isIqcView);
-  if (iqcSubmenu) iqcSubmenu.classList.toggle('hidden', !isIqcView);
-  if (iqcButton) iqcButton.setAttribute('aria-expanded', String(isIqcView));
-  iqcChevron?.classList.toggle('rotate-180', isIqcView);
+  const syncFolderState = (submenuId, isFolderActive) => {
+    const folderBtn = document.querySelector(`.nav-pill[data-submenu-toggle="${submenuId}"]`);
+    const submenu = document.getElementById(submenuId);
+    const chevron = document.querySelector(`[data-submenu-chevron="${submenuId}"]`);
+    if (submenu) submenu.classList.toggle('hidden', !isFolderActive);
+    if (folderBtn) {
+      folderBtn.setAttribute('aria-expanded', String(isFolderActive));
+      folderBtn.classList.toggle('text-slate-900', isFolderActive);
+      folderBtn.classList.toggle('font-bold', isFolderActive);
+    }
+    chevron?.classList.toggle('rotate-180', isFolderActive);
+  };
 
-  const reportesButton = document.querySelector('.nav-pill[data-view="reportes"]');
-  const reportesSubmenu = document.getElementById('reportesSubmenu');
-  const reportesChevron = document.querySelector('[data-submenu-chevron="reportesSubmenu"]');
-  const isReportesView = viewName === 'reportes' || reportesSubMenuViews.has(viewName);
-  reportesButton?.classList.toggle('active', isReportesView);
-  if (reportesSubmenu) reportesSubmenu.classList.toggle('hidden', !isReportesView);
-  if (reportesButton) reportesButton.setAttribute('aria-expanded', String(isReportesView));
-  reportesChevron?.classList.toggle('rotate-180', isReportesView);
-
-  const documentationButton = document.querySelector('.nav-pill[data-view="documentacion"]');
-  const documentationSubmenu = document.getElementById('documentationSubmenu');
-  const documentationChevron = document.querySelector('[data-submenu-chevron="documentationSubmenu"]');
-  const isDocumentationView = viewName === 'documentacion' || documentationSubMenuViews.has(viewName);
-  documentationButton?.classList.toggle('active', isDocumentationView);
-  if (documentationSubmenu) documentationSubmenu.classList.toggle('hidden', !isDocumentationView);
-  if (documentationButton) documentationButton.setAttribute('aria-expanded', String(isDocumentationView));
-  documentationChevron?.classList.toggle('rotate-180', isDocumentationView);
+  syncFolderState('iqcSubmenu', iqcSubMenuViews.has(viewName));
+  syncFolderState('reportesSubmenu', reportesSubMenuViews.has(viewName));
+  syncFolderState('documentationSubmenu', documentationSubMenuViews.has(viewName));
 }
 
 window.navigateToView = function(viewName) {
-  updateSidebarNavigation(viewName);
-  switchView(viewName);
+  const resolved = viewName === 'reportes' ? 'reportes-auditorias' : viewName;
+  updateSidebarNavigation(resolved);
+  switchView(resolved);
 };
 
 function switchView(viewName) {
