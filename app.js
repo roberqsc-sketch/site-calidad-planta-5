@@ -3428,8 +3428,12 @@ function getTvEventUrls(record) {
   return raw.split(/[\s,\n]+/).map(u => u.trim()).filter(u => u.startsWith('http'));
 }
 
+const TV_EVENTS_MDR_MIN_TS = Math.floor(new Date('2026-11-10T00:00:00').getTime() / 1000);
+
 function checkTvEventHasMdr(record) {
   if (!record) return false;
+  const sortTs = Number(record.sortTimestamp || 0);
+  if (sortTs < TV_EVENTS_MDR_MIN_TS) return false;
   if (record.hasMdr !== undefined) return Boolean(record.hasMdr);
   const k = String(record.defect || '').toLocaleUpperCase();
   const m = String(record.impact || '').toLocaleUpperCase();
@@ -3793,9 +3797,13 @@ function renderTvEventsDashboard() {
     mdrCountBadge.textContent = tvEventsFilters.onlyMdr
       ? `Mostrando MDR (${totalMdrCount}) ✕`
       : `MDR (${totalMdrCount})`;
-    mdrFilterBtn.className = tvEventsFilters.onlyMdr
-      ? 'inline-flex items-center gap-1.5 rounded-lg border border-rose-700 bg-rose-600 px-2.5 py-1 text-[11px] font-black text-white shadow-sm transition cursor-pointer'
-      : 'inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-extrabold text-rose-700 shadow-2xs transition hover:bg-rose-100 hover:border-rose-300 cursor-pointer';
+    if (tvEventsFilters.onlyMdr) {
+      mdrFilterBtn.className = 'inline-flex items-center gap-1.5 rounded-lg border border-rose-700 bg-rose-600 px-2.5 py-1 text-[11px] font-black text-white shadow-sm transition cursor-pointer';
+    } else if (totalMdrCount > 0) {
+      mdrFilterBtn.className = 'inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-extrabold text-rose-700 shadow-2xs transition hover:bg-rose-100 hover:border-rose-300 cursor-pointer';
+    } else {
+      mdrFilterBtn.className = 'inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-600 shadow-2xs transition hover:bg-slate-100 hover:border-slate-300 cursor-pointer';
+    }
   }
 
   const uniqueModels = new Set(filtered.map(r => (r.model || '').trim()).filter(Boolean));
@@ -6267,6 +6275,7 @@ window.renderAuditReports = function() {
       summaryAnalysisRows.push({
         dateKey,
         dateFormatted,
+        lineNorm: lineName,
         lineName: getCleanLineLabel(lineName),
         completedForms,
         recordsCount: lineRecords.length,
@@ -6283,14 +6292,24 @@ window.renderAuditReports = function() {
   });
 
   const summaryRowsHtml = filteredAnalysisRows.length ? filteredAnalysisRows.map(row => {
-    const completedBadges = row.completedForms.map(f => `
-      <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold mr-1.5 mb-1 shadow-xs" title="${escapeAuditReportText(f.title)}">
+    const completedBadges = row.completedForms.map(f => {
+      const hasNgInForm = f.ngCount > 0;
+      const badgeClasses = hasNgInForm
+        ? 'border-rose-300 bg-rose-50/90 text-rose-900 hover:bg-rose-100 hover:border-rose-400'
+        : 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 hover:border-emerald-400';
+      const countPillClasses = hasNgInForm
+        ? 'bg-rose-200 text-rose-900'
+        : 'bg-emerald-200 text-emerald-900';
+      const clickPayload = `window.openAuditHistoryDetailModal({ dateKey: decodeURIComponent('${encodeURIComponent(row.dateKey)}'), lineNorm: decodeURIComponent('${encodeURIComponent(row.lineNorm)}'), formKey: decodeURIComponent('${encodeURIComponent(f.key)}') })`;
+      return `
+      <button type="button" onclick="${clickPayload}" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border text-[11px] font-semibold mr-1.5 mb-1 shadow-xs transition cursor-pointer ${badgeClasses}" title="${escapeAuditReportText(f.title)} — Clic para ver auditoría y desvíos NG">
         <span class="text-xs">${f.icon}</span>
         <span>${escapeAuditReportText(f.short)}</span>
-        <span class="bg-emerald-200 text-emerald-900 rounded-full px-1.5 py-0.2 text-[10px] font-bold">${f.count}</span>
-        ${f.ngCount > 0 ? `<span class="bg-rose-100 text-rose-700 px-1 rounded text-[9px] font-bold">${f.ngCount} NG</span>` : ''}
-      </span>
-    `).join('');
+        <span class="${countPillClasses} rounded-full px-1.5 py-0.2 text-[10px] font-bold">${f.count}</span>
+        ${hasNgInForm ? `<span class="bg-rose-600 text-white px-1.5 py-0.2 rounded text-[9px] font-extrabold">${f.ngCount} NG</span>` : ''}
+        <span class="text-[9px] opacity-60 ml-0.5">↗</span>
+      </button>`;
+    }).join('');
 
     const qualityBadge = row.ngCount === 0
       ? '<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold border border-emerald-300">✓ 100% Conforme</span>'
@@ -6813,36 +6832,52 @@ function renderDailyAuditDetails(line, date, isFuture) {
     auditListContainer.appendChild(listSummary);
 
     lineDayRecords.forEach(r => {
-      const formCard = document.createElement('div');
+      const formCard = document.createElement('button');
+      formCard.type = 'button';
       const isNg = isAuditRecordNonConforming(r);
-      formCard.className = `flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl border transition-colors ${
-        isNg ? 'bg-amber-50/80 border-amber-200' : 'bg-white border-slate-200 shadow-2xs'
+      const ngTotal = Array.isArray(r.ngItems) ? r.ngItems.length : 0;
+      formCard.className = `w-full text-left flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl border transition cursor-pointer ${
+        isNg
+          ? 'bg-rose-50/70 border-rose-200 hover:bg-rose-100/70 hover:border-rose-300 shadow-2xs'
+          : 'bg-white border-slate-200 hover:border-red-300 hover:bg-slate-50/80 shadow-2xs'
       }`;
-      
+      formCard.title = 'Clic para ver qué auditó el auditor y los ítems NG';
+      formCard.addEventListener('click', () => {
+        window.openAuditHistoryDetailModal({
+          recordId: r.id,
+          dateKey,
+          lineNorm: normalizeAuditReportLine(r.line || line.lineCode),
+          formKey: r.formKey
+        });
+      });
+
       const leftCol = document.createElement('div');
-      leftCol.className = 'flex items-center gap-2.5';
+      leftCol.className = 'flex items-center gap-2.5 min-w-0';
       const icon = document.createElement('span');
-      icon.className = 'w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center text-sm';
+      icon.className = 'w-8 h-8 shrink-0 rounded-lg bg-slate-100 flex items-center justify-center text-sm';
       icon.textContent = r.formKey === 'esd' ? '⚡' : r.formKey === 'torque' ? '🔩' : r.formKey === 'inicio_turno' ? '📋' : r.formKey === 'cambio_modelo' ? '🔄' : '🏭';
-      
+
       const info = document.createElement('div');
+      info.className = 'min-w-0';
       const name = document.createElement('div');
-      name.className = 'font-bold text-xs text-slate-800';
+      name.className = 'font-bold text-xs text-slate-800 truncate';
       name.textContent = r.formName || r.formKey;
-      
+
       const meta = document.createElement('div');
-      meta.className = 'text-[11px] text-slate-500';
-      meta.textContent = `Auditor: ${r.auditor || 'Sin auditor'} · Turno: ${r.turno || '1'} · Origen: ${r.source || 'BBDD'}`;
-      
+      meta.className = 'text-[11px] text-slate-500 truncate';
+      meta.textContent = `Auditor: ${r.auditor || 'Sin auditor'} · Turno: ${r.turno || '1'} · ${r.model ? `Modelo: ${r.model}` : (r.source || 'BBDD')}`;
+
       info.append(name, meta);
       leftCol.append(icon, info);
-      
+
       const statusBadge = document.createElement('span');
-      statusBadge.className = `px-2.5 py-1 rounded-full text-[10px] font-bold ${
+      statusBadge.className = `shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
         isNg ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
       }`;
-      statusBadge.textContent = isNg ? 'Desvío NG' : 'Conforme';
-      
+      statusBadge.textContent = isNg
+        ? `Desvío NG${ngTotal ? ` (${ngTotal})` : ''} · Ver detalle →`
+        : 'Conforme · Ver detalle →';
+
       formCard.append(leftCol, statusBadge);
       auditListContainer.appendChild(formCard);
     });
@@ -9363,3 +9398,233 @@ window.saveLineAuditorAssignments = async function() {
     }
   }
 };
+
+
+// ==========================================
+// VISOR HISTÓRICO DE AUDITORÍA Y DESVÍOS NG
+// ==========================================
+let activeAuditDetailState = {
+  records: [],
+  activeIndex: 0
+};
+
+function getAuditFormIconByKey(formKey) {
+  switch (formKey) {
+    case 'esd': return '⚡';
+    case 'torque': return '🔩';
+    case 'inicio_turno': return '📋';
+    case 'cambio_modelo': return '🔄';
+    case 'im_diario': return '🏭';
+    case 'im_cambio': return '📘';
+    default: return '📄';
+  }
+}
+
+function renderAuditHistoryDetailBody() {
+  const modalBody = document.getElementById('auditDetailModalBody');
+  const titleEl = document.getElementById('auditDetailModalTitle');
+  const subtitleEl = document.getElementById('auditDetailModalSubtitle');
+  const iconEl = document.getElementById('auditDetailModalIcon');
+  const footerInfoEl = document.getElementById('auditDetailModalFooterInfo');
+  if (!modalBody) return;
+
+  const { records, activeIndex } = activeAuditDetailState;
+  const record = records[activeIndex];
+  if (!record) {
+    modalBody.innerHTML = '<div class="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-xs text-slate-500">No se encontraron detalles para esta auditoría.</div>';
+    return;
+  }
+
+  const isNg = isAuditRecordNonConforming(record);
+  const ngItems = Array.isArray(record.ngItems) ? record.ngItems : [];
+  const auditedItems = Array.isArray(record.auditedItems) ? record.auditedItems : [];
+  const cleanLine = typeof getCleanLineLabel === 'function'
+    ? getCleanLineLabel(normalizeAuditReportLine(record.line || record.rawLine || ''))
+    : (record.line || record.rawLine || '-');
+
+  if (iconEl) iconEl.textContent = getAuditFormIconByKey(record.formKey);
+  if (titleEl) titleEl.textContent = `${record.formName || record.formKey} — ${cleanLine}`;
+  if (subtitleEl) {
+    subtitleEl.textContent = `Fecha: ${record.timestamp || record.dateKey || '-'} · Auditor: ${record.auditor || 'No registrado'}`;
+  }
+  if (footerInfoEl) {
+    footerInfoEl.textContent = `${record.source || 'Google Sheets'} · ${auditedItems.length} ítem(s) auditado(s) · ${ngItems.length} desvío(s) NG`;
+  }
+
+  // Selector de múltiples auditorías en el mismo día/línea/formulario
+  const tabsHtml = records.length > 1
+    ? `<div class="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3">
+        <span class="text-[11px] font-bold text-slate-600 mr-1">Registros del día (${records.length}):</span>
+        ${records.map((rec, idx) => {
+          const recIsNg = isAuditRecordNonConforming(rec);
+          const selected = idx === activeIndex;
+          const baseCls = selected
+            ? (recIsNg ? 'bg-rose-600 text-white border-rose-700' : 'bg-slate-900 text-white border-slate-900')
+            : (recIsNg ? 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100');
+          return `<button type="button" onclick="window.selectAuditHistoryDetailRecord(${idx})" class="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold transition cursor-pointer ${baseCls}">
+            <span>#${idx + 1} · ${escapeAuditReportText(rec.auditor || 'Auditor')}</span>
+            <span class="text-[10px] opacity-85">${rec.turno ? `T${escapeAuditReportText(rec.turno)}` : ''}</span>
+            ${recIsNg ? '<span class="rounded bg-white/25 px-1 text-[9px] font-black">NG</span>' : ''}
+          </button>`;
+        }).join('')}
+      </div>`
+    : '';
+
+  // Ficha general del formulario
+  const infoCardHtml = `
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-2xs text-xs">
+      <div>
+        <span class="block text-[10px] font-bold uppercase tracking-wide text-slate-400">Estado Global</span>
+        <span class="mt-1 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-extrabold ${
+          isNg ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+        }">${isNg ? '⚠ No Conforme (NG)' : '✓ Conforme (OK)'}</span>
+      </div>
+      <div>
+        <span class="block text-[10px] font-bold uppercase tracking-wide text-slate-400">Auditor</span>
+        <span class="mt-1 block font-bold text-slate-800">${escapeAuditReportText(record.auditor || 'No registrado')}</span>
+      </div>
+      <div>
+        <span class="block text-[10px] font-bold uppercase tracking-wide text-slate-400">Turno / Sup.</span>
+        <span class="mt-1 block font-semibold text-slate-700">${escapeAuditReportText(record.turno || '-')} ${record.supervisor ? `· ${escapeAuditReportText(record.supervisor)}` : ''}</span>
+      </div>
+      <div>
+        <span class="block text-[10px] font-bold uppercase tracking-wide text-slate-400">Modelo / Lote</span>
+        <span class="mt-1 block font-semibold text-slate-700">${escapeAuditReportText(record.model || '-')} ${record.lote ? `· Lote ${escapeAuditReportText(record.lote)}` : ''}</span>
+      </div>
+    </div>
+  `;
+
+  // Sección prioritaria: LO NG / DESVÍOS DETECTADOS
+  const ngSectionHtml = isNg || ngItems.length > 0
+    ? `<div class="rounded-xl border border-rose-200 bg-rose-50/90 p-4 shadow-2xs">
+        <div class="flex items-center justify-between gap-2 mb-2.5">
+          <div class="flex items-center gap-2">
+            <span class="flex h-6 w-6 items-center justify-center rounded-lg bg-rose-600 text-white text-xs font-black">!</span>
+            <h4 class="text-xs font-extrabold uppercase tracking-wide text-rose-900">Desvíos / Ítems NG Detectados (${ngItems.length || 1})</h4>
+          </div>
+          <span class="text-[10px] font-bold text-rose-700 bg-white px-2 py-0.5 rounded-full border border-rose-200">Prioridad de revisión</span>
+        </div>
+        ${ngItems.length > 0
+          ? `<ul class="space-y-1.5">${ngItems.map(item => `
+              <li class="flex items-start gap-2 rounded-lg border border-rose-200/80 bg-white px-3 py-2 text-xs text-rose-950 font-medium">
+                <span class="mt-0.5 shrink-0 rounded bg-rose-600 px-1.5 py-0.2 text-[9px] font-black text-white">NG</span>
+                <span>${escapeAuditReportText(item)}</span>
+              </li>`).join('')}
+            </ul>`
+          : '<p class="rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs text-rose-900">La auditoría figura como <strong>No Conforme</strong> en la columna de estado general.</p>'
+        }
+      </div>`
+    : `<div class="rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 flex items-center gap-2.5 text-xs text-emerald-900">
+        <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white text-xs font-bold">✓</span>
+        <span><strong>Sin desvíos NG registrados.</strong> Todos los controles auditados en este formulario resultaron conformes.</span>
+      </div>`;
+
+  // Detalle completo de lo que auditó el auditor (NG primero)
+  const sortedItems = [...auditedItems].sort((a, b) => (b.isNg ? 1 : 0) - (a.isNg ? 1 : 0));
+  const okCount = sortedItems.filter(it => !it.isNg).length;
+  const ngDetailCount = sortedItems.filter(it => it.isNg).length;
+
+  const checklistSectionHtml = `
+    <div class="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-2xs">
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-4 py-3">
+        <div>
+          <h4 class="text-xs font-extrabold text-slate-900">Detalle Completo Auditado</h4>
+          <p class="text-[11px] text-slate-500">Cada puesto o punto verificado por el auditor en este formulario</p>
+        </div>
+        <div class="flex items-center gap-1.5 text-[10px] font-bold">
+          ${ngDetailCount > 0 ? `<span class="rounded-full bg-rose-100 text-rose-800 border border-rose-200 px-2 py-0.5">${ngDetailCount} NG</span>` : ''}
+          <span class="rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5">${okCount} OK</span>
+        </div>
+      </div>
+      ${sortedItems.length > 0
+        ? `<div class="overflow-x-auto max-h-[340px]">
+            <table class="w-full text-left text-xs">
+              <thead class="sticky top-0 bg-slate-100/95 text-[10px] uppercase tracking-wide text-slate-600 border-b border-slate-200">
+                <tr>
+                  <th class="px-4 py-2.5 font-bold">Puesto / Ítem Verificado</th>
+                  <th class="px-4 py-2.5 font-bold">Valor / Medición / Observación</th>
+                  <th class="px-4 py-2.5 font-bold text-right w-24">Estado</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                ${sortedItems.map(it => `
+                  <tr class="${it.isNg ? 'bg-rose-50/70' : 'hover:bg-slate-50'}">
+                    <td class="px-4 py-2.5 font-semibold ${it.isNg ? 'text-rose-950' : 'text-slate-800'}">${escapeAuditReportText(it.label || '-')}</td>
+                    <td class="px-4 py-2.5 ${it.isNg ? 'text-rose-900 font-medium' : 'text-slate-600'}">${escapeAuditReportText(it.detail || '-')}</td>
+                    <td class="px-4 py-2.5 text-right whitespace-nowrap">
+                      <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                        it.isNg
+                          ? 'bg-rose-600 text-white'
+                          : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      }">${it.isNg ? 'NG' : 'OK'}</span>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>`
+        : `<div class="p-5 text-center text-xs text-slate-500">No hay ítems individuales detallados disponibles para este registro${record.puestosCount ? ` (${record.puestosCount} puestos verificados)` : ''}. Hacé clic en <strong>Actualizar BBDD</strong> si acabás de sincronizar.</div>`
+      }
+    </div>
+  `;
+
+  modalBody.innerHTML = tabsHtml + infoCardHtml + ngSectionHtml + checklistSectionHtml;
+}
+
+window.selectAuditHistoryDetailRecord = function(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= activeAuditDetailState.records.length) return;
+  activeAuditDetailState.activeIndex = index;
+  renderAuditHistoryDetailBody();
+};
+
+window.openAuditHistoryDetailModal = function(options = {}) {
+  const modal = document.getElementById('auditFormDetailModal');
+  if (!modal) return;
+
+  const allRecords = (Array.isArray(AppState.recentFormRecords) ? AppState.recentFormRecords : [])
+    .filter(r => !r.isDemo);
+
+  let matched = [];
+  if (options.recordId) {
+    const exact = allRecords.find(r => r.id === options.recordId);
+    if (exact) matched = [exact];
+  }
+
+  if (matched.length === 0) {
+    matched = allRecords.filter(r => {
+      if (options.dateKey && r.dateKey !== options.dateKey) return false;
+      if (options.formKey && r.formKey !== options.formKey) return false;
+      if (options.lineNorm && normalizeAuditReportLine(r.line || r.rawLine) !== options.lineNorm) return false;
+      return true;
+    });
+  }
+
+  if (matched.length === 0) {
+    showToast('No se encontraron registros detallados para ese formulario.', 'warning');
+    return;
+  }
+
+  // Priorizar mostrar primero el primer registro con NG si existe
+  const firstNgIndex = matched.findIndex(r => isAuditRecordNonConforming(r));
+  activeAuditDetailState = {
+    records: matched,
+    activeIndex: firstNgIndex >= 0 ? firstNgIndex : 0
+  };
+
+  renderAuditHistoryDetailBody();
+  modal.classList.remove('hidden');
+};
+
+window.closeAuditFormDetailModal = function() {
+  const modal = document.getElementById('auditFormDetailModal');
+  if (modal) modal.classList.add('hidden');
+};
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const detailModal = document.getElementById('auditFormDetailModal');
+    if (detailModal && !detailModal.classList.contains('hidden')) {
+      window.closeAuditFormDetailModal();
+    }
+  }
+});

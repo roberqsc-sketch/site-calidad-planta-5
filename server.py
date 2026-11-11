@@ -824,12 +824,14 @@ def load_tv_events_records(force_refresh=False):
                 impact_val = values[12].strip()
                 containment_val = values[13].strip()
                 corrective_val = values[14].strip()
-                has_mdr = (
+                mdr_text_found = (
                     'MDR' in defect_val.upper() or
                     'MDR' in impact_val.upper() or
                     'MDR' in containment_val.upper() or
                     'MDR' in corrective_val.upper()
                 )
+                mdr_min_ts = int(datetime.datetime(2026, 11, 10, 0, 0, 0).timestamp())
+                has_mdr = bool(mdr_text_found and sort_ts >= mdr_min_ts)
 
                 records.append({
                     'id': row_idx,
@@ -2230,14 +2232,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                 shift = srows[0][3].strip() if len(srows[0])>3 else ''
                                 model = srows[0][4].strip() if len(srows[0])>4 else ''
                                 ng_items = []
+                                audited_items = []
                                 for r in srows:
                                     puesto = r[5].strip() if len(r)>5 else ''
                                     cod_t = r[6].strip() if len(r)>6 else ''
                                     desc_t = r[7].strip() if len(r)>7 else ''
                                     pulsera = r[8].strip() if len(r)>8 else ''
                                     conf = r[9].strip().upper() if len(r)>9 else ''
-                                    if 'NO CONFORME' in conf or pulsera.upper() == 'NG' or cod_t.upper() in ('NE', 'NP', 'NG'):
+                                    row_is_ng = ('NO CONFORME' in conf or pulsera.upper() == 'NG' or cod_t.upper() in ('NE', 'NP', 'NG'))
+                                    if row_is_ng:
                                         ng_items.append(f"Puesto {puesto}: {desc_t or cod_t} (Pulsera: {pulsera})")
+                                    audited_items.append({
+                                        'label': f"Puesto {puesto}" if puesto else 'Puesto',
+                                        'detail': f"Pulsera: {pulsera or '-'} · Estado: {desc_t or cod_t or conf or '-'}",
+                                        'status': 'NG' if row_is_ng else 'OK',
+                                        'isNg': row_is_ng
+                                    })
                                 is_ng = len(ng_items) > 0
                                 esd_records.append({
                                     'id': f"sheet-esd-{idx}",
@@ -2253,6 +2263,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                     'status': 'No Conforme' if is_ng else 'Conforme',
                                     'isNg': is_ng,
                                     'ngItems': ng_items,
+                                    'auditedItems': audited_items,
                                     'puestosCount': len(srows),
                                     'source': 'Google Sheets · Pulseras'
                                 })
@@ -2276,6 +2287,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                 auditor = srows[0][3].strip() if len(srows[0])>3 else ''
                                 model = srows[0][4].strip() if len(srows[0])>4 else ''
                                 ng_items = []
+                                audited_items = []
                                 for r in srows:
                                     puesto = r[5].strip() if len(r)>5 else ''
                                     min_t = r[6].strip() if len(r)>6 else ''
@@ -2284,8 +2296,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                     prisionero = r[9].strip().upper() if len(r)>9 else ''
                                     torque_med = r[10].strip() if len(r)>10 else ''
                                     est = r[14].strip().upper() if len(r)>14 else ''
-                                    if est == 'NG' or prisionero == 'NG' or 'NO' in est:
+                                    row_is_ng = (est == 'NG' or prisionero == 'NG' or 'NO' in est)
+                                    if row_is_ng:
                                         ng_items.append(f"Puesto {puesto} (Atornilladora {num_at}): Torque {torque_med} kgf*cm [{min_t}-{max_t}]")
+                                    audited_items.append({
+                                        'label': f"Puesto {puesto}" + (f" (Atorn. {num_at})" if num_at else ''),
+                                        'detail': f"Medido: {torque_med or '-'} kgf*cm · Rango [{min_t or '-'}-{max_t or '-'}] · Prisionero: {prisionero or '-'} · Est: {est or ('NG' if row_is_ng else 'OK')}",
+                                        'status': 'NG' if row_is_ng else 'OK',
+                                        'isNg': row_is_ng
+                                    })
                                 is_ng = len(ng_items) > 0
                                 torque_records.append({
                                     'id': f"sheet-torque-{idx}",
@@ -2301,6 +2320,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                     'status': 'No Conforme' if is_ng else 'Conforme',
                                     'isNg': is_ng,
                                     'ngItems': ng_items,
+                                    'auditedItems': audited_items,
                                     'puestosCount': len(srows),
                                     'source': 'Google Sheets · Torque'
                                 })
@@ -2309,36 +2329,53 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         except Exception as e:
                             counts['torque'] = 0
 
-                        # 3. Inicio Turno (TV)
-                        try:
-                            rows = fetch_csv(AUDIT_SHEETS_CONFIG['inicio_turno']['url'])
-                            it_header = rows[0] if rows else []
-                            it_records = []
+                        def parse_checklist_records(sheet_url, form_key, form_name, source_label, max_col, obs_col):
+                            rows = fetch_csv(sheet_url)
+                            header = rows[0] if rows else []
+                            parsed = []
                             for idx, r in enumerate(rows[1:], start=1):
-                                if not r or not r[0].strip(): continue
+                                if not r or not r[0].strip():
+                                    continue
                                 ts = r[0].strip()
                                 date_key = parse_audit_date(ts)
-                                raw_line = r[1].strip() if len(r)>1 else ''
+                                raw_line = r[1].strip() if len(r) > 1 else ''
                                 norm_line = normalize_audit_line(raw_line)
-                                shift = r[2].strip() if len(r)>2 else ''
-                                auditor = r[3].strip() if len(r)>3 else ''
-                                supervisor = r[4].strip() if len(r)>4 else ''
-                                model = r[5].strip() if len(r)>5 else ''
-                                lote = r[6].strip() if len(r)>6 else ''
-                                conf_gen = r[7].strip().upper() if len(r)>7 else ''
+                                shift = r[2].strip() if len(r) > 2 else ''
+                                auditor = r[3].strip() if len(r) > 3 else ''
+                                supervisor = r[4].strip() if len(r) > 4 else ''
+                                model = r[5].strip() if len(r) > 5 else ''
+                                lote = r[6].strip() if len(r) > 6 else ''
+                                conf_gen = r[7].strip().upper() if len(r) > 7 else ''
                                 ng_items = []
-                                for col_idx in range(8, min(26, len(r))):
-                                    val = r[col_idx].strip().upper()
-                                    if 'NG' in val or 'NO CONFORME' in val or val == 'NO':
-                                        item_name = it_header[col_idx] if col_idx < len(it_header) else f"Ítem {col_idx}"
+                                audited_items = []
+                                for col_idx in range(8, min(max_col, len(r))):
+                                    raw_val = r[col_idx].strip()
+                                    val = raw_val.upper()
+                                    item_is_ng = ('NG' in val or 'NO CONFORME' in val or val == 'NO')
+                                    item_name = header[col_idx].strip() if col_idx < len(header) and header[col_idx].strip() else f"Ítem {col_idx}"
+                                    if item_is_ng:
                                         ng_items.append(f"{item_name}: NG")
-                                if len(r) > 26 and r[26].strip() and r[26].strip() != '-':
-                                    ng_items.append(f"Desvío: {r[26].strip()}")
+                                    if raw_val:
+                                        audited_items.append({
+                                            'label': item_name,
+                                            'detail': raw_val,
+                                            'status': 'NG' if item_is_ng else 'OK',
+                                            'isNg': item_is_ng
+                                        })
+                                obs_text = r[obs_col].strip() if len(r) > obs_col else ''
+                                if obs_text and obs_text != '-':
+                                    ng_items.append(f"Desvío: {obs_text}")
+                                    audited_items.append({
+                                        'label': 'Observación / Desvío reportado',
+                                        'detail': obs_text,
+                                        'status': 'NG',
+                                        'isNg': True
+                                    })
                                 is_ng = ('NO CONFORME' in conf_gen or len(ng_items) > 0)
-                                it_records.append({
-                                    'id': f"sheet-inicio_turno-{idx}",
-                                    'formKey': 'inicio_turno',
-                                    'formName': 'CHECKLIST INICIO DE TURNO',
+                                parsed.append({
+                                    'id': f"sheet-{form_key}-{idx}",
+                                    'formKey': form_key,
+                                    'formName': form_name,
                                     'line': norm_line,
                                     'rawLine': raw_line,
                                     'dateKey': date_key,
@@ -2348,11 +2385,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                                     'turno': shift,
                                     'model': model,
                                     'lote': lote,
+                                    'observacion': obs_text if obs_text and obs_text != '-' else '',
                                     'status': 'No Conforme' if is_ng else 'Conforme',
                                     'isNg': is_ng,
                                     'ngItems': ng_items,
-                                    'source': 'Google Sheets · Inicio Turno'
+                                    'auditedItems': audited_items,
+                                    'source': source_label
                                 })
+                            return parsed
+
+                        # 3. Inicio Turno (TV)
+                        try:
+                            it_records = parse_checklist_records(
+                                AUDIT_SHEETS_CONFIG['inicio_turno']['url'],
+                                'inicio_turno', 'CHECKLIST INICIO DE TURNO',
+                                'Google Sheets · Inicio Turno', 26, 26
+                            )
                             all_records.extend(it_records)
                             counts['inicio_turno'] = len(it_records)
                         except Exception as e:
@@ -2360,57 +2408,30 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
                         # 4. Cambio Modelo (TV)
                         try:
-                            rows = fetch_csv(AUDIT_SHEETS_CONFIG['cambio_modelo']['url'])
-                            cm_header = rows[0] if rows else []
-                            cm_records = []
-                            for idx, r in enumerate(rows[1:], start=1):
-                                if not r or not r[0].strip(): continue
-                                ts = r[0].strip()
-                                date_key = parse_audit_date(ts)
-                                raw_line = r[1].strip() if len(r)>1 else ''
-                                norm_line = normalize_audit_line(raw_line)
-                                shift = r[2].strip() if len(r)>2 else ''
-                                auditor = r[3].strip() if len(r)>3 else ''
-                                supervisor = r[4].strip() if len(r)>4 else ''
-                                model = r[5].strip() if len(r)>5 else ''
-                                lote = r[6].strip() if len(r)>6 else ''
-                                conf_gen = r[7].strip().upper() if len(r)>7 else ''
-                                ng_items = []
-                                for col_idx in range(8, min(29, len(r))):
-                                    val = r[col_idx].strip().upper()
-                                    if 'NG' in val or 'NO CONFORME' in val or val == 'NO':
-                                        item_name = cm_header[col_idx] if col_idx < len(cm_header) else f"Ítem {col_idx}"
-                                        ng_items.append(f"{item_name}: NG")
-                                if len(r) > 29 and r[29].strip() and r[29].strip() != '-':
-                                    ng_items.append(f"Desvío: {r[29].strip()}")
-                                is_ng = ('NO CONFORME' in conf_gen or len(ng_items) > 0)
-                                cm_records.append({
-                                    'id': f"sheet-cambio_modelo-{idx}",
-                                    'formKey': 'cambio_modelo',
-                                    'formName': 'CAMBIO DE MODELO (RG-0220 / RG-0772)',
-                                    'line': norm_line,
-                                    'rawLine': raw_line,
-                                    'dateKey': date_key,
-                                    'timestamp': ts,
-                                    'auditor': auditor,
-                                    'supervisor': supervisor,
-                                    'turno': shift,
-                                    'model': model,
-                                    'lote': lote,
-                                    'status': 'No Conforme' if is_ng else 'Conforme',
-                                    'isNg': is_ng,
-                                    'ngItems': ng_items,
-                                    'source': 'Google Sheets · Cambio Modelo TV'
-                                })
-                            # Attach specific pautas NG
+                            cm_records = parse_checklist_records(
+                                AUDIT_SHEETS_CONFIG['cambio_modelo']['url'],
+                                'cambio_modelo', 'CAMBIO DE MODELO (RG-0220 / RG-0772)',
+                                'Google Sheets · Cambio Modelo TV', 29, 29
+                            )
                             rows_cmp = fetch_csv(AUDIT_SHEETS_CONFIG['cambio_modelo']['pautas_url'])
                             for r in rows_cmp[1:]:
-                                if len(r) > 9 and (r[9].strip().upper() == 'NG' or 'NO' in r[7].strip().upper()):
-                                    ts = r[0].strip() if len(r)>0 else ''
-                                    puesto = r[8].strip() if len(r)>8 else ''
-                                    obs = r[11].strip() if len(r)>11 else ''
-                                    for rec in cm_records:
-                                        if rec['timestamp'] == ts:
+                                ts = r[0].strip() if len(r) > 0 else ''
+                                if not ts:
+                                    continue
+                                puesto = r[8].strip() if len(r) > 8 else ''
+                                pauta_val = r[9].strip() if len(r) > 9 else ''
+                                est_pauta = r[7].strip() if len(r) > 7 else ''
+                                obs = r[11].strip() if len(r) > 11 else ''
+                                pauta_is_ng = (len(r) > 9 and (pauta_val.upper() == 'NG' or 'NO' in est_pauta.upper()))
+                                for rec in cm_records:
+                                    if rec['timestamp'] == ts:
+                                        rec['auditedItems'].append({
+                                            'label': f"Pauta Puesto {puesto or '-'}",
+                                            'detail': obs or f"Estado: {pauta_val or est_pauta or 'OK'}",
+                                            'status': 'NG' if pauta_is_ng else 'OK',
+                                            'isNg': pauta_is_ng
+                                        })
+                                        if pauta_is_ng:
                                             rec['ngItems'].append(f"Puesto {puesto}: {obs or 'Desvío en pauta'}")
                                             rec['isNg'] = True
                                             rec['status'] = 'No Conforme'
@@ -2421,48 +2442,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
                         # 5. IM Diario
                         try:
-                            rows = fetch_csv(AUDIT_SHEETS_CONFIG['im_diario']['url'])
-                            imd_header = rows[0] if rows else []
-                            imd_records = []
-                            for idx, r in enumerate(rows[1:], start=1):
-                                if not r or not r[0].strip(): continue
-                                ts = r[0].strip()
-                                date_key = parse_audit_date(ts)
-                                raw_line = r[1].strip() if len(r)>1 else ''
-                                norm_line = normalize_audit_line(raw_line)
-                                shift = r[2].strip() if len(r)>2 else ''
-                                auditor = r[3].strip() if len(r)>3 else ''
-                                supervisor = r[4].strip() if len(r)>4 else ''
-                                model = r[5].strip() if len(r)>5 else ''
-                                lote = r[6].strip() if len(r)>6 else ''
-                                conf_gen = r[7].strip().upper() if len(r)>7 else ''
-                                ng_items = []
-                                for col_idx in range(8, min(27, len(r))):
-                                    val = r[col_idx].strip().upper()
-                                    if 'NG' in val or 'NO CONFORME' in val or val == 'NO':
-                                        item_name = imd_header[col_idx] if col_idx < len(imd_header) else f"Ítem {col_idx}"
-                                        ng_items.append(f"{item_name}: NG")
-                                if len(r) > 27 and r[27].strip() and r[27].strip() != '-':
-                                    ng_items.append(f"Desvío: {r[27].strip()}")
-                                is_ng = ('NO CONFORME' in conf_gen or len(ng_items) > 0)
-                                imd_records.append({
-                                    'id': f"sheet-im_diario-{idx}",
-                                    'formKey': 'im_diario',
-                                    'formName': 'INICIO PRODUCCIÓN DIARIO DE IM',
-                                    'line': norm_line,
-                                    'rawLine': raw_line,
-                                    'dateKey': date_key,
-                                    'timestamp': ts,
-                                    'auditor': auditor,
-                                    'supervisor': supervisor,
-                                    'turno': shift,
-                                    'model': model,
-                                    'lote': lote,
-                                    'status': 'No Conforme' if is_ng else 'Conforme',
-                                    'isNg': is_ng,
-                                    'ngItems': ng_items,
-                                    'source': 'Google Sheets · IM Diario'
-                                })
+                            imd_records = parse_checklist_records(
+                                AUDIT_SHEETS_CONFIG['im_diario']['url'],
+                                'im_diario', 'INICIO PRODUCCIÓN DIARIO DE IM',
+                                'Google Sheets · IM Diario', 27, 27
+                            )
                             all_records.extend(imd_records)
                             counts['im_diario'] = len(imd_records)
                         except Exception as e:
@@ -2470,48 +2454,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
                         # 6. IM Cambio Modelo / Pautas
                         try:
-                            rows = fetch_csv(AUDIT_SHEETS_CONFIG['im_cambio']['url'])
-                            imc_header = rows[0] if rows else []
-                            imc_records = []
-                            for idx, r in enumerate(rows[1:], start=1):
-                                if not r or not r[0].strip(): continue
-                                ts = r[0].strip()
-                                date_key = parse_audit_date(ts)
-                                raw_line = r[1].strip() if len(r)>1 else ''
-                                norm_line = normalize_audit_line(raw_line)
-                                shift = r[2].strip() if len(r)>2 else ''
-                                auditor = r[3].strip() if len(r)>3 else ''
-                                supervisor = r[4].strip() if len(r)>4 else ''
-                                model = r[5].strip() if len(r)>5 else ''
-                                lote = r[6].strip() if len(r)>6 else ''
-                                conf_gen = r[7].strip().upper() if len(r)>7 else ''
-                                ng_items = []
-                                for col_idx in range(8, min(21, len(r))):
-                                    val = r[col_idx].strip().upper()
-                                    if 'NG' in val or 'NO CONFORME' in val or val == 'NO':
-                                        item_name = imc_header[col_idx] if col_idx < len(imc_header) else f"Ítem {col_idx}"
-                                        ng_items.append(f"{item_name}: NG")
-                                if len(r) > 21 and r[21].strip() and r[21].strip() != '-':
-                                    ng_items.append(f"Desvío: {r[21].strip()}")
-                                is_ng = ('NO CONFORME' in conf_gen or len(ng_items) > 0)
-                                imc_records.append({
-                                    'id': f"sheet-im_cambio-{idx}",
-                                    'formKey': 'im_cambio',
-                                    'formName': 'SEGUIMIENTO DE PAUTAS / CAMBIO DE MODELO IM',
-                                    'line': norm_line,
-                                    'rawLine': raw_line,
-                                    'dateKey': date_key,
-                                    'timestamp': ts,
-                                    'auditor': auditor,
-                                    'supervisor': supervisor,
-                                    'turno': shift,
-                                    'model': model,
-                                    'lote': lote,
-                                    'status': 'No Conforme' if is_ng else 'Conforme',
-                                    'isNg': is_ng,
-                                    'ngItems': ng_items,
-                                    'source': 'Google Sheets · IM Cambio Modelo'
-                                })
+                            imc_records = parse_checklist_records(
+                                AUDIT_SHEETS_CONFIG['im_cambio']['url'],
+                                'im_cambio', 'SEGUIMIENTO DE PAUTAS / CAMBIO DE MODELO IM',
+                                'Google Sheets · IM Cambio Modelo', 21, 21
+                            )
                             all_records.extend(imc_records)
                             counts['im_cambio'] = len(imc_records)
                         except Exception as e:

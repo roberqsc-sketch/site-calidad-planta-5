@@ -2889,7 +2889,7 @@
   </div>
 
   <!-- Scripts -->
-  <script src="app.js?v=20261110-sidebar-dropdowns"></script>
+  <script src="app.js?v=20261110-audit-history-mdr-today"></script>
 
   <!-- MODAL: VISOR CARRUSEL DE FOTOS DE EVENTOS TV -->
   <div id="tvPhotoCarouselModal" class="fixed inset-0 z-[100] hidden items-center justify-center bg-slate-950/85 p-3 sm:p-6 backdrop-blur-sm" onclick="if(event.target===this) window.closeTvPhotoCarousel()">
@@ -2961,6 +2961,37 @@
           <button id="btnCancelLineAuditorModal" type="button" onclick="window.closeLineAuditorModal()" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors">Cancelar</button>
           <button id="btnSaveLineAuditorModal" type="button" onclick="window.saveLineAuditorAssignments()" class="rounded-xl bg-red-600 px-5 py-2 text-xs font-bold text-white shadow-sm hover:bg-red-700 transition-colors">Guardar asignaciones</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- MODAL: DETALLE DE AUDITORÍA HISTÓRICA (DESVÍOS NG E ÍTEMS AUDITADOS) -->
+  <div id="auditFormDetailModal" onclick="if (event.target === this) window.closeAuditFormDetailModal()" class="fixed inset-0 z-[70] hidden flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs">
+    <div class="flex flex-col w-full max-w-3xl max-h-[88vh] overflow-hidden rounded-2xl bg-white shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+      <div class="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-4 bg-gradient-to-r from-slate-50 via-white to-red-50/40 shrink-0">
+        <div class="flex items-center gap-3 min-w-0">
+          <div id="auditDetailModalIcon" class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xl shadow-xs border border-slate-200">
+            📋
+          </div>
+          <div class="min-w-0">
+            <h3 id="auditDetailModalTitle" class="text-base font-extrabold text-slate-900 truncate">Detalle de Auditoría</h3>
+            <p id="auditDetailModalSubtitle" class="text-xs text-slate-500 mt-0.5 truncate">Inspección de desvíos NG e ítems verificados</p>
+          </div>
+        </div>
+        <button id="btnCloseAuditDetailModal" type="button" onclick="window.closeAuditFormDetailModal()" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer shrink-0" aria-label="Cerrar detalle">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div id="auditDetailModalBody" class="flex-1 overflow-y-auto p-6 space-y-5 bg-slate-50/40">
+      </div>
+
+      <div class="flex items-center justify-between gap-3 border-t border-slate-100 px-6 py-3.5 bg-white shrink-0">
+        <span id="auditDetailModalFooterInfo" class="text-[11px] font-medium text-slate-500">Fuente: BBDD de Auditorías</span>
+        <button type="button" onclick="window.closeAuditFormDetailModal()" class="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-slate-800 transition-colors cursor-pointer">
+          Cerrar
+        </button>
       </div>
     </div>
   </div>
