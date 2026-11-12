@@ -5073,6 +5073,7 @@ function initAuth() {
       applyUserToUI(AppState.currentUser);
       loginView.classList.add('hidden');
       appContainer.classList.remove('hidden');
+      loadAuditNotApplicableEntries();
       loadScrapScreensData();
       if (isAdministrator()) renderServerUserManagement();
     })
@@ -5106,6 +5107,7 @@ function initAuth() {
         applyUserToUI(AppState.currentUser);
         loginView.classList.add('hidden');
         appContainer.classList.remove('hidden');
+        loadAuditNotApplicableEntries();
         loadScrapScreensData();
         if (errorMsg) errorMsg.classList.add('hidden');
         if (isAdministrator()) renderServerUserManagement();
@@ -5778,10 +5780,54 @@ const ALL_SIX_AUDIT_FORMS = [
 let auditSheetsDataMeta = null;
 let auditMissingFilterState = 'all';
 
+const AUDIT_SHEETS_CLIENT_CACHE_KEY = 'calidad_audit_sheets_cache_v1';
+
+function applyAuditSheetsDataPayload(data) {
+  if (!data || !Array.isArray(data.records)) return;
+  const badge = document.getElementById('auditSheetsRecordsBadge');
+  const sourcesText = document.getElementById('auditSheetsSourcesText');
+  auditSheetsDataMeta = data;
+
+  if (badge) {
+    badge.textContent = `${data.counts?.totalAudits || data.records.length} registros en vivo`;
+  }
+  if (sourcesText) {
+    sourcesText.textContent = `Pulseras ESD: ${data.counts?.esd || 0} · Torque: ${data.counts?.torque || 0} · Inicio Turno: ${data.counts?.inicio_turno || 0} · Cambio Modelo: ${data.counts?.cambio_modelo || 0} · IM Diario: ${data.counts?.im_diario || 0} · Pautas IM: ${data.counts?.im_cambio || 0}`;
+  }
+
+  const localRecords = (Array.isArray(AppState.recentFormRecords) ? AppState.recentFormRecords : [])
+    .filter(r => !r.source?.startsWith('Google Sheets') && !String(r.id).startsWith('sheet-'));
+
+  AppState.recentFormRecords = [...localRecords, ...data.records];
+  auditRadiographyConfig.generated = true;
+  if (typeof window.renderAuditReports === 'function') {
+    window.renderAuditReports();
+  }
+  if (typeof renderDashboardOverview === 'function') {
+    renderDashboardOverview();
+  }
+  if (typeof renderFormRecordsTable === 'function') {
+    renderFormRecordsTable(AppState.recentFormRecords);
+  }
+}
+
 window.loadAuditSheetsData = async function(forceRefresh = false) {
   const badge = document.getElementById('auditSheetsRecordsBadge');
   const sourcesText = document.getElementById('auditSheetsSourcesText');
-  if (badge) badge.textContent = forceRefresh ? 'Actualizando...' : 'Cargando BBDD...';
+
+  if (!forceRefresh) {
+    try {
+      const cachedRaw = localStorage.getItem(AUDIT_SHEETS_CLIENT_CACHE_KEY);
+      if (cachedRaw) {
+        const cached = JSON.parse(cachedRaw);
+        if (cached && Array.isArray(cached.records)) {
+          applyAuditSheetsDataPayload(cached);
+        }
+      }
+    } catch (_) {}
+  }
+
+  if (badge) badge.textContent = forceRefresh ? 'Actualizando...' : (auditSheetsDataMeta ? 'Sincronizando...' : 'Cargando BBDD...');
 
   try {
     const url = '/api/audits/sheets-data' + (forceRefresh ? '?refresh=1' : '');
@@ -5789,38 +5835,21 @@ window.loadAuditSheetsData = async function(forceRefresh = false) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     if (data.success && Array.isArray(data.records)) {
-      auditSheetsDataMeta = data;
-      
-      // Update badge and text
-      if (badge) {
-        badge.textContent = `${data.counts?.totalAudits || data.records.length} registros en vivo`;
-      }
-      if (sourcesText) {
-        sourcesText.textContent = `Pulseras ESD: ${data.counts?.esd || 0} · Torque: ${data.counts?.torque || 0} · Inicio Turno: ${data.counts?.inicio_turno || 0} · Cambio Modelo: ${data.counts?.cambio_modelo || 0} · IM Diario: ${data.counts?.im_diario || 0} · Pautas IM: ${data.counts?.im_cambio || 0}`;
-      }
-
-      // Merge into AppState.recentFormRecords keeping local submissions
-      const localRecords = (Array.isArray(AppState.recentFormRecords) ? AppState.recentFormRecords : [])
-        .filter(r => !r.source?.startsWith('Google Sheets') && !String(r.id).startsWith('sheet-'));
-      
-      AppState.recentFormRecords = [...localRecords, ...data.records];
-
-      // Auto-generate radiography if in view or default
-      auditRadiographyConfig.generated = true;
-      if (typeof window.renderAuditReports === 'function') {
-        window.renderAuditReports();
-      }
-      if (typeof renderDashboardOverview === 'function') {
-        renderDashboardOverview();
-      }
-      if (typeof renderFormRecordsTable === 'function') {
-        renderFormRecordsTable(AppState.recentFormRecords);
-      }
+      try {
+        localStorage.setItem(AUDIT_SHEETS_CLIENT_CACHE_KEY, JSON.stringify({
+          records: data.records,
+          counts: data.counts,
+          fetchedAt: data.fetchedAt
+        }));
+      } catch (_) {}
+      applyAuditSheetsDataPayload(data);
     }
   } catch (err) {
     console.error('Error cargando auditorías de Google Sheets:', err);
-    if (badge) badge.textContent = 'Modo local';
-    if (sourcesText) sourcesText.textContent = 'No se pudo sincronizar con Google Sheets en este momento.';
+    if (!auditSheetsDataMeta) {
+      if (badge) badge.textContent = 'Modo local';
+      if (sourcesText) sourcesText.textContent = 'No se pudo sincronizar con Google Sheets en este momento.';
+    }
   }
 };
 
@@ -6668,28 +6697,231 @@ function getDailyAuditRecordsForLine(lineCode, dateKey) {
   });
 }
 
+const AUDIT_NOT_APPLICABLE_STORAGE_KEY = 'calidad_audit_not_applicable_v1';
+let auditNotApplicableEntries = [];
+
+try {
+  const savedNa = localStorage.getItem(AUDIT_NOT_APPLICABLE_STORAGE_KEY);
+  if (savedNa) {
+    const parsedNa = JSON.parse(savedNa);
+    if (Array.isArray(parsedNa)) auditNotApplicableEntries = parsedNa;
+  }
+} catch (_) {}
+
+function normalizeRuleLineCode(lineCode) {
+  const up = String(lineCode || '').toLocaleUpperCase().trim();
+  if (up.includes('LCD 6') || up.includes('LCD6')) return 'LCD 6';
+  if (up.includes('LCD 8') || up.includes('LCD8')) return 'LCD 8';
+  if (up.includes('CELDA 1')) return 'CELDA 1';
+  if (up.includes('CELDA 2')) return 'CELDA 2';
+  if (up.includes('CELDA 3')) return 'CELDA 3';
+  if (up.includes('INSERCI') || up.includes('MANUAL') || up.includes('JIG')) return 'INSERCIÓN MANUAL & JIG';
+  return up;
+}
+
+const LINE_AUDIT_REQUIREMENTS = {
+  'LCD 6': [
+    { key: 'esd', label: 'Pulseras ESD', icon: '⚡', allowNotApplicable: false },
+    { key: 'torque', label: 'Control de Torque', icon: '🔩', allowNotApplicable: false },
+    { key: 'inicio_turno', label: 'Inicio de Turno', icon: '📋', allowNotApplicable: false },
+    { key: 'cambio_modelo', label: 'Cambio de Modelo', icon: '🔄', allowNotApplicable: true, naHint: 'Activar si hoy no hubo cambio de modelo' }
+  ],
+  'LCD 8': [
+    { key: 'esd', label: 'Pulseras ESD', icon: '⚡', allowNotApplicable: false },
+    { key: 'torque', label: 'Control de Torque', icon: '🔩', allowNotApplicable: false },
+    { key: 'inicio_turno', label: 'Inicio de Turno', icon: '📋', allowNotApplicable: false },
+    { key: 'cambio_modelo', label: 'Cambio de Modelo', icon: '🔄', allowNotApplicable: true, naHint: 'Activar si hoy no hubo cambio de modelo' }
+  ],
+  'CELDA 1': [
+    { key: 'torque', label: 'Control de Torque', icon: '🔩', allowNotApplicable: false },
+    { key: 'inicio_turno', label: 'Inicio de Turno', icon: '📋', allowNotApplicable: false },
+    { key: 'cambio_modelo', label: 'Cambio de Modelo', icon: '🔄', allowNotApplicable: true, naHint: 'Activar si hoy no hubo cambio de modelo' },
+    { key: 'esd', label: 'Pulseras ESD', icon: '⚡', allowNotApplicable: true, naHint: 'Activar si el modelo no requiere pulseras' }
+  ],
+  'CELDA 2': [
+    { key: 'torque', label: 'Control de Torque', icon: '🔩', allowNotApplicable: false },
+    { key: 'inicio_turno', label: 'Inicio de Turno', icon: '📋', allowNotApplicable: false },
+    { key: 'cambio_modelo', label: 'Cambio de Modelo', icon: '🔄', allowNotApplicable: true, naHint: 'Activar si hoy no hubo cambio de modelo' },
+    { key: 'esd', label: 'Pulseras ESD', icon: '⚡', allowNotApplicable: true, naHint: 'Activar si el modelo no requiere pulseras' }
+  ],
+  'CELDA 3': [
+    { key: 'torque', label: 'Control de Torque', icon: '🔩', allowNotApplicable: false },
+    { key: 'inicio_turno', label: 'Inicio de Turno', icon: '📋', allowNotApplicable: false },
+    { key: 'cambio_modelo', label: 'Cambio de Modelo', icon: '🔄', allowNotApplicable: true, naHint: 'Activar si hoy no hubo cambio de modelo' },
+    { key: 'esd', label: 'Pulseras ESD', icon: '⚡', allowNotApplicable: true, naHint: 'Activar si el modelo no requiere pulseras' }
+  ],
+  'INSERCIÓN MANUAL & JIG': [
+    { key: 'im_diario', label: 'Inicio de Producción JIG', icon: '🏭', allowNotApplicable: false },
+    { key: 'im_cambio', label: 'Cambio de Modelo JIG', icon: '📘', allowNotApplicable: true, naHint: 'Activar si hoy no hubo cambio de modelo IM/JIG' },
+    { key: 'esd', label: 'Pulseras ESD', icon: '⚡', allowNotApplicable: true, naHint: 'Activar si no requiere pulsera ESD' },
+    { key: 'torque', label: 'Control de Torque', icon: '🔩', allowNotApplicable: true, naHint: 'Activar si no requiere torque' }
+  ]
+};
+
+function getAuditNotApplicableEntry(lineCode, dateKey, formKey) {
+  const normLine = normalizeRuleLineCode(lineCode);
+  return auditNotApplicableEntries.find(e =>
+    e.dateKey === dateKey &&
+    e.formKey === formKey &&
+    normalizeRuleLineCode(e.lineCode) === normLine
+  ) || null;
+}
+
+function saveAuditNotApplicableLocalCache() {
+  try {
+    localStorage.setItem(AUDIT_NOT_APPLICABLE_STORAGE_KEY, JSON.stringify(auditNotApplicableEntries));
+  } catch (_) {}
+}
+
+async function loadAuditNotApplicableEntries() {
+  try {
+    const res = await requestAuthApi('/api/audits/not-applicable');
+    if (res && Array.isArray(res.entries)) {
+      auditNotApplicableEntries = res.entries;
+      saveAuditNotApplicableLocalCache();
+      if (typeof renderDashboardOverview === 'function') {
+        renderDashboardOverview();
+      }
+    }
+  } catch (err) {
+    console.warn('No se pudieron cargar estados No aplica:', err);
+  }
+}
+
+window.toggleAuditNotApplicable = async function(lineCode, dateKey, formKey, makeNotApplicable) {
+  const normLine = normalizeRuleLineCode(lineCode);
+  const previous = [...auditNotApplicableEntries];
+  auditNotApplicableEntries = auditNotApplicableEntries.filter(e =>
+    !(e.dateKey === dateKey && e.formKey === formKey && normalizeRuleLineCode(e.lineCode) === normLine)
+  );
+  if (makeNotApplicable) {
+    auditNotApplicableEntries.push({
+      dateKey,
+      lineCode: normLine,
+      formKey,
+      markedBy: AppState.currentUser?.fullName || 'Auditor',
+      updatedAt: Math.floor(Date.now() / 1000)
+    });
+  }
+  saveAuditNotApplicableLocalCache();
+  renderDashboardOverview();
+
+  try {
+    const res = await requestAuthApi('/api/audits/not-applicable', {
+      method: 'POST',
+      body: JSON.stringify({
+        dateKey,
+        lineCode: normLine,
+        formKey,
+        notApplicable: Boolean(makeNotApplicable)
+      })
+    });
+    if (res && Array.isArray(res.entries)) {
+      auditNotApplicableEntries = res.entries;
+      saveAuditNotApplicableLocalCache();
+      renderDashboardOverview();
+    }
+    showToast(
+      makeNotApplicable ? 'Marcado como "No aplica" correctamente.' : 'Estado "No aplica" quitado.',
+      'success'
+    );
+  } catch (err) {
+    auditNotApplicableEntries = previous;
+    saveAuditNotApplicableLocalCache();
+    renderDashboardOverview();
+    showToast(err.message || 'No se pudo guardar el estado No aplica.', 'error');
+  }
+};
+
+function evaluateDailyLineAuditStatus(lineCode, dateKey, lineDayRecords, isFuture, productionStatus) {
+  const normLine = normalizeRuleLineCode(lineCode);
+  const rules = LINE_AUDIT_REQUIREMENTS[normLine] || [];
+  const records = Array.isArray(lineDayRecords) ? lineDayRecords : [];
+  const realCount = records.length;
+  const ngCount = records.filter(r => isAuditRecordNonConforming(r)).length;
+
+  const itemStatuses = rules.map(rule => {
+    const matching = records.filter(r => r.formKey === rule.key);
+    const done = matching.length > 0;
+    const naEntry = !done && rule.allowNotApplicable ? getAuditNotApplicableEntry(normLine, dateKey, rule.key) : null;
+    const isNa = Boolean(naEntry);
+    const completed = done || isNa;
+    const formNgCount = matching.filter(r => isAuditRecordNonConforming(r)).length;
+    return {
+      ...rule,
+      count: matching.length,
+      done,
+      isNa,
+      naEntry,
+      completed,
+      formNgCount
+    };
+  });
+
+  const applicableTotal = itemStatuses.filter(i => !i.isNa).length;
+  const doneCount = itemStatuses.filter(i => i.done).length;
+  const naCount = itemStatuses.filter(i => i.isNa).length;
+  const missingItems = itemStatuses.filter(i => !i.completed);
+  const missingCount = missingItems.length;
+  const isComplete = rules.length > 0 ? missingCount === 0 : realCount > 0;
+  const hasActivity = realCount > 0 || naCount > 0;
+
+  let visualState = 'empty';
+  if (isFuture) visualState = 'future';
+  else if (productionStatus) visualState = 'no_production';
+  else if (!hasActivity) visualState = 'empty';
+  else if (!isComplete) visualState = 'incomplete';
+  else if (ngCount > 0) visualState = 'complete_ng';
+  else visualState = 'complete_ok';
+
+  return {
+    normLine,
+    realCount,
+    ngCount,
+    itemStatuses,
+    applicableTotal,
+    doneCount,
+    naCount,
+    missingItems,
+    missingCount,
+    isComplete,
+    hasActivity,
+    visualState
+  };
+}
+
 function showMatrixHoverTooltip(targetElement, line, date, isFuture, productionStatus, lineDayRecords) {
   let tooltip = document.getElementById('matrixHoverTooltip');
   if (!tooltip) {
     tooltip = document.createElement('div');
     tooltip.id = 'matrixHoverTooltip';
-    tooltip.className = 'fixed z-[9999] pointer-events-none transition-all duration-150 ease-out opacity-0 translate-y-1 bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl shadow-2xl p-3.5 w-72 text-slate-800 text-xs';
+    tooltip.className = 'fixed z-[9999] pointer-events-none transition-all duration-150 ease-out opacity-0 translate-y-1 bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl shadow-2xl p-3.5 w-80 text-slate-800 text-xs';
     document.body.appendChild(tooltip);
   }
 
+  const dateKey = getLocalDateKey(date);
   const dateLabel = new Intl.DateTimeFormat('es-AR', {
     weekday: 'long',
     day: 'numeric',
     month: 'short'
   }).format(date);
 
-  const count = (lineDayRecords || []).length;
-  const ngCount = (lineDayRecords || []).filter(r => isAuditRecordNonConforming(r)).length;
+  const summary = evaluateDailyLineAuditStatus(line.lineCode, dateKey, lineDayRecords, isFuture, productionStatus);
+  const count = summary.realCount;
+  const ngCount = summary.ngCount;
+
+  const dotClass = summary.visualState === 'incomplete'
+    ? 'bg-amber-400 shadow-xs ring-2 ring-amber-100'
+    : summary.visualState === 'complete_ng'
+      ? 'bg-rose-500 shadow-xs ring-2 ring-rose-100'
+      : summary.visualState === 'complete_ok'
+        ? 'bg-emerald-500 shadow-xs ring-2 ring-emerald-100'
+        : 'bg-slate-300';
 
   let contentHtml = `
     <div class="flex items-center justify-between pb-2.5 border-b border-slate-100">
       <div class="flex items-center gap-2">
-        <span class="w-2.5 h-2.5 rounded-full ${count > 0 ? (ngCount > 0 ? 'bg-amber-500 shadow-xs ring-2 ring-amber-100' : 'bg-emerald-500 shadow-xs ring-2 ring-emerald-100') : 'bg-slate-300'}"></span>
+        <span class="w-2.5 h-2.5 rounded-full ${dotClass}"></span>
         <span class="font-extrabold text-slate-900 text-xs tracking-tight">${escapeAuditReportText(line.lineCode)}</span>
       </div>
       <span class="text-[10px] font-semibold text-slate-400 capitalize">${escapeAuditReportText(dateLabel)}</span>
@@ -6709,43 +6941,57 @@ function showMatrixHoverTooltip(targetElement, line, date, isFuture, productionS
         <div class="text-[10.5px] text-slate-500 mt-1">${escapeAuditReportText(productionStatus.reason || 'No especificado')}</div>
       </div>
     `;
-  } else if (count === 0) {
+  } else if (!summary.hasActivity) {
     contentHtml += `
       <div class="py-3 text-center text-slate-400 text-[11px] font-medium flex items-center justify-center gap-1.5">
         <span class="text-slate-300">⚪</span><span>0 formularios registrados en BBDD</span>
       </div>
     `;
   } else {
+    const statusChipClass = summary.visualState === 'incomplete'
+      ? 'bg-amber-50 text-amber-800 border border-amber-200'
+      : summary.visualState === 'complete_ng'
+        ? 'bg-rose-50 text-rose-700 border border-rose-200'
+        : 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+    const statusChipText = summary.visualState === 'incomplete'
+      ? `Incompleta (${summary.doneCount}/${summary.applicableTotal})`
+      : summary.visualState === 'complete_ng'
+        ? `Completa · ${ngCount} NG`
+        : 'Completa OK';
+
     contentHtml += `
       <div class="mt-2.5 space-y-1.5">
         <div class="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-          <span>Formularios Auditados</span>
-          <span class="px-2 py-0.5 rounded-full ${ngCount > 0 ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'} font-black text-[9.5px]">
-            ${count} ${count === 1 ? 'control' : 'controles'}
-          </span>
+          <span>Estado del día (${count} ${count === 1 ? 'control' : 'controles'})</span>
+          <span class="px-2 py-0.5 rounded-full ${statusChipClass} font-black text-[9.5px]">${statusChipText}</span>
         </div>
     `;
 
-    lineDayRecords.forEach(r => {
-      const isNg = isAuditRecordNonConforming(r);
-      const icon = r.formKey === 'esd' ? '⚡' : r.formKey === 'torque' ? '🔩' : r.formKey === 'inicio_turno' ? '📋' : r.formKey === 'cambio_modelo' ? '🔄' : '🏭';
-      const shortName = r.formName || r.formKey;
-
+    summary.itemStatuses.forEach(item => {
+      const badgeCls = item.done
+        ? (item.formNgCount > 0 ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-emerald-100 text-emerald-800 border border-emerald-300')
+        : item.isNa
+          ? 'bg-slate-100 text-slate-700 border border-slate-300'
+          : 'bg-amber-100 text-amber-900 border border-amber-300';
+      const badgeTxt = item.done
+        ? (item.formNgCount > 0 ? `${item.formNgCount} NG` : 'OK ✓')
+        : item.isNa
+          ? 'No aplica'
+          : (item.allowNotApplicable ? 'Falta / N/A' : 'Falta');
       contentHtml += `
-        <div class="flex items-center justify-between gap-2 p-2 rounded-xl transition-colors ${isNg ? 'bg-rose-50/70 border border-rose-200/80' : 'bg-slate-50/80 border border-slate-100'}">
-          <div class="flex items-center gap-2 min-w-0">
-            <span class="w-6 h-6 rounded-md bg-white border border-slate-200/60 shadow-2xs flex items-center justify-center text-xs shrink-0">${icon}</span>
-            <div class="min-w-0">
-              <p class="font-bold text-slate-800 text-[11px] truncate leading-tight">${escapeAuditReportText(shortName)}</p>
-              <p class="text-[9.5px] text-slate-500 truncate mt-0.5">${escapeAuditReportText(r.auditor || 'Auditor no registrado')}</p>
-            </div>
+        <div class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-slate-50/80 border border-slate-100">
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="text-xs shrink-0">${item.icon}</span>
+            <span class="font-semibold text-slate-800 text-[11px] truncate">${escapeAuditReportText(item.label)}</span>
           </div>
-          <span class="shrink-0 px-2 py-0.5 rounded-full text-[9px] font-black ${isNg ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-emerald-100 text-emerald-800 border border-emerald-300'}">
-            ${isNg ? 'Desvío NG' : 'Conforme'}
-          </span>
+          <span class="shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${badgeCls}">${badgeTxt}</span>
         </div>
       `;
     });
+
+    if (summary.visualState === 'incomplete') {
+      contentHtml += `<p class="text-[10px] text-amber-700 pt-1 font-medium">Hacé clic en la celda para marcar "No aplica" en los opcionales que no correspondan.</p>`;
+    }
 
     contentHtml += `</div>`;
   }
@@ -6754,12 +7000,12 @@ function showMatrixHoverTooltip(targetElement, line, date, isFuture, productionS
 
   // Cálculo de posición precisa
   const rect = targetElement.getBoundingClientRect();
-  const tooltipWidth = 288;
+  const tooltipWidth = 320;
   let left = rect.left + (rect.width / 2) - (tooltipWidth / 2);
   if (left < 12) left = 12;
   if (left + tooltipWidth > window.innerWidth - 12) left = window.innerWidth - tooltipWidth - 12;
 
-  const placeAbove = rect.top > 240;
+  const placeAbove = rect.top > 280;
   tooltip.style.left = `${left}px`;
   if (placeAbove) {
     tooltip.style.top = 'auto';
@@ -6830,8 +7076,112 @@ function renderDailyAuditDetails(line, date, isFuture) {
   header.appendChild(statusPill);
   details.appendChild(header);
 
-  // Consulta de auditorías reales de las bases de datos
+  // Consulta de auditorías reales de las bases de datos y evaluación por reglas de línea
   const lineDayRecords = getDailyAuditRecordsForLine(line.lineCode, dateKey);
+  const daySummary = evaluateDailyLineAuditStatus(line.lineCode, dateKey, lineDayRecords, isFuture, productionStatus);
+
+  if (!isFuture && !productionStatus && daySummary.itemStatuses.length > 0) {
+    const checklistCard = document.createElement('div');
+    checklistCard.className = 'mt-3 rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs';
+
+    const checklistHead = document.createElement('div');
+    checklistHead.className = 'flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-100';
+    const badgeColor = daySummary.isComplete
+      ? (daySummary.ngCount > 0 ? 'bg-rose-100 text-rose-800 border-rose-200' : 'bg-emerald-100 text-emerald-800 border-emerald-200')
+      : 'bg-amber-100 text-amber-900 border-amber-300';
+    const badgeText = daySummary.isComplete
+      ? (daySummary.ngCount > 0 ? `Completa · ${daySummary.ngCount} con NG` : 'Auditoría de línea completa ✓')
+      : `Incompleta · Falta${daySummary.missingCount > 1 ? 'n' : ''} ${daySummary.missingCount}`;
+    checklistHead.innerHTML = `
+      <div>
+        <span class="text-xs font-extrabold text-slate-900">Formularios requeridos en ${escapeAuditReportText(line.lineCode)}</span>
+        <p class="text-[10.5px] text-slate-500">Activá el switch <strong>No aplica</strong> si algún formulario condicional no correspondió en esta jornada.</p>
+      </div>
+      <span class="px-2.5 py-1 rounded-full border text-[10px] font-extrabold ${badgeColor}">${badgeText}</span>
+    `;
+    checklistCard.appendChild(checklistHead);
+
+    const grid = document.createElement('div');
+    grid.className = 'grid grid-cols-1 sm:grid-cols-2 gap-2';
+
+    daySummary.itemStatuses.forEach(item => {
+      const row = document.createElement('div');
+      const rowStyle = item.done
+        ? (item.formNgCount > 0 ? 'border-rose-200 bg-rose-50/50' : 'border-emerald-200 bg-emerald-50/40')
+        : item.isNa
+          ? 'border-slate-200 bg-slate-50'
+          : 'border-amber-200 bg-amber-50/50';
+      row.className = `flex items-center justify-between gap-2.5 rounded-xl border px-3 py-2 ${rowStyle}`;
+
+      const left = document.createElement('div');
+      left.className = 'flex items-center gap-2 min-w-0';
+      const ic = document.createElement('span');
+      ic.className = 'text-sm shrink-0';
+      ic.textContent = item.icon;
+      const txtWrap = document.createElement('div');
+      txtWrap.className = 'min-w-0';
+      const lbl = document.createElement('div');
+      lbl.className = 'text-xs font-bold text-slate-800 truncate';
+      lbl.textContent = item.label;
+      const sub = document.createElement('div');
+      sub.className = 'text-[10px] text-slate-500 truncate';
+      sub.textContent = item.done
+        ? `${item.count} registro${item.count > 1 ? 's' : ''} cargado${item.count > 1 ? 's' : ''}${item.formNgCount > 0 ? ` · ${item.formNgCount} NG` : ' · Conforme'}`
+        : item.isNa
+          ? `Marcado N/A${item.naEntry?.markedBy ? ` por ${item.naEntry.markedBy}` : ''}`
+          : (item.allowNotApplicable ? (item.naHint || 'Pendiente o No aplica') : 'Obligatorio · Sin registrar aún');
+      txtWrap.append(lbl, sub);
+      left.append(ic, txtWrap);
+
+      const right = document.createElement('div');
+      right.className = 'shrink-0 flex items-center gap-2';
+
+      if (item.done) {
+        const donePill = document.createElement('span');
+        donePill.className = `px-2 py-0.5 rounded-full text-[10px] font-bold ${item.formNgCount > 0 ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-emerald-100 text-emerald-800 border border-emerald-300'}`;
+        donePill.textContent = item.formNgCount > 0 ? `${item.formNgCount} NG` : 'Hecho ✓';
+        right.appendChild(donePill);
+      } else if (item.allowNotApplicable) {
+        const swLabel = document.createElement('label');
+        swLabel.className = 'inline-flex items-center gap-1.5 cursor-pointer select-none';
+        const swText = document.createElement('span');
+        swText.className = `text-[10px] font-bold ${item.isNa ? 'text-slate-700' : 'text-amber-800'}`;
+        swText.textContent = 'No aplica';
+
+        const swBtn = document.createElement('button');
+        swBtn.type = 'button';
+        swBtn.setAttribute('role', 'switch');
+        swBtn.setAttribute('aria-checked', item.isNa ? 'true' : 'false');
+        swBtn.setAttribute('aria-label', `Marcar ${item.label} como No aplica en ${line.lineCode}`);
+        swBtn.className = `relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+          item.isNa ? 'bg-emerald-500' : 'bg-slate-300 hover:bg-slate-400'
+        }`;
+        const swKnob = document.createElement('span');
+        swKnob.className = `inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-xs transition-transform ${
+          item.isNa ? 'translate-x-4' : 'translate-x-1'
+        }`;
+        swBtn.appendChild(swKnob);
+        swBtn.addEventListener('click', () => {
+          window.toggleAuditNotApplicable(line.lineCode, dateKey, item.key, !item.isNa);
+        });
+
+        swLabel.append(swText, swBtn);
+        right.appendChild(swLabel);
+      } else {
+        const reqPill = document.createElement('span');
+        reqPill.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300';
+        reqPill.textContent = 'Falta';
+        right.appendChild(reqPill);
+      }
+
+      row.append(left, right);
+      grid.appendChild(row);
+    });
+
+    checklistCard.appendChild(grid);
+    details.appendChild(checklistCard);
+  }
+
   const auditListContainer = document.createElement('div');
   auditListContainer.className = 'mt-3 space-y-2';
 
@@ -7084,10 +7434,11 @@ function renderDashboardOverview() {
       const isFuture = dateKey > todayKey;
       const productionStatus = getLineProductionStatus(line.lineCode, dateKey);
 
-      // Conteo real por línea y fecha desde las BBDD
+      // Conteo real y completitud por línea/fecha según reglas y switches "No aplica"
       const lineDayRecords = getDailyAuditRecordsForLine(line.lineCode, dateKey);
-      const count = lineDayRecords.length;
-      const ngCount = lineDayRecords.filter(r => isAuditRecordNonConforming(r)).length;
+      const daySummary = evaluateDailyLineAuditStatus(line.lineCode, dateKey, lineDayRecords, isFuture, productionStatus);
+      const count = daySummary.realCount;
+      const ngCount = daySummary.ngCount;
       const isSelected = selectedDailyAuditCell && selectedDailyAuditCell.lineCode === line.lineCode && selectedDailyAuditCell.dateKey === dateKey;
       if (isSelected) initialSelection = { line, date, isFuture, records: lineDayRecords };
 
@@ -7095,24 +7446,25 @@ function renderDashboardOverview() {
       cell.className = `border-b border-slate-100 p-1.5 text-center ${dateKey === todayKey ? 'bg-rose-50/20' : ''}`;
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = `mx-auto flex min-h-12 w-full flex-col items-center justify-center rounded-lg border px-1 py-1.5 transition-all ${
-        isFuture
-          ? 'cursor-default border-slate-100 bg-slate-100 text-slate-400'
-          : productionStatus
-            ? 'cursor-default border-slate-300 bg-slate-200 text-slate-700'
-            : count > 0
-              ? (ngCount > 0
-                  ? 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 shadow-xs'
-                  : 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100 shadow-xs')
-              : (dateKey === todayKey
-                  ? 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                  : 'border-slate-200 bg-slate-50/80 text-slate-400 hover:bg-slate-100')
-      }${isSelected ? ' ring-2 ring-rose-500 ring-offset-1' : ''}`;
+      const cellStateClass = daySummary.visualState === 'future'
+        ? 'cursor-default border-slate-100 bg-slate-100 text-slate-400'
+        : daySummary.visualState === 'no_production'
+          ? 'cursor-default border-slate-300 bg-slate-200 text-slate-700'
+          : daySummary.visualState === 'incomplete'
+            ? 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 shadow-xs'
+            : daySummary.visualState === 'complete_ng'
+              ? 'border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100 shadow-xs'
+              : daySummary.visualState === 'complete_ok'
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100 shadow-xs'
+                : (dateKey === todayKey
+                    ? 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    : 'border-slate-200 bg-slate-50/80 text-slate-400 hover:bg-slate-100');
+
+      button.className = `mx-auto flex min-h-12 w-full flex-col items-center justify-center rounded-lg border px-1 py-1.5 transition-all ${cellStateClass}${isSelected ? ' ring-2 ring-rose-500 ring-offset-1' : ''}`;
       button.disabled = isFuture;
       button.setAttribute('aria-label', `${line.lineCode}, ${dateKey}: ${count} formularios auditados`);
-      // No seteamos title nativo para que no aparezca el tooltip negro feo del navegador
       button.removeAttribute('title');
-      
+
       const countText = document.createElement('span');
       countText.className = 'text-xs font-black';
       countText.textContent = isFuture ? '—' : productionStatus ? 'N/P' : `${count}`;
@@ -7128,6 +7480,25 @@ function renderDashboardOverview() {
             : '0 auditados';
 
       button.append(countText, statusText);
+
+      if (daySummary.hasActivity && !isFuture && !productionStatus) {
+        const subMeta = document.createElement('span');
+        subMeta.className = `mt-0.5 inline-flex items-center gap-1 rounded px-1 py-0.2 text-[8px] font-extrabold ${
+          daySummary.visualState === 'incomplete'
+            ? 'bg-amber-200/80 text-amber-950'
+            : daySummary.visualState === 'complete_ng'
+              ? 'bg-rose-200/80 text-rose-900'
+              : 'bg-emerald-200/70 text-emerald-900'
+        }`;
+        if (daySummary.visualState === 'incomplete') {
+          subMeta.textContent = `Falta ${daySummary.missingCount}${ngCount > 0 ? ` · ${ngCount} NG` : ''}`;
+        } else if (daySummary.visualState === 'complete_ng') {
+          subMeta.textContent = `Completa · ${ngCount} NG`;
+        } else {
+          subMeta.textContent = daySummary.naCount > 0 ? 'Completa (N/A)' : 'Completa ✓';
+        }
+        button.appendChild(subMeta);
+      }
 
       // Popover minimalista flotante al pasar el mouse (hover)
       button.addEventListener('mouseenter', () => {

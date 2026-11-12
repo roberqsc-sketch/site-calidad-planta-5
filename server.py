@@ -113,7 +113,9 @@ AUDIT_SHEETS_CONFIG = {
     }
 }
 AUDIT_SHEETS_CACHE_LOCK = threading.Lock()
-AUDIT_SHEETS_CACHE = {'records': None, 'loaded_at': 0.0, 'counts': {}}
+AUDIT_SHEETS_REFRESH_LOCK = threading.Lock()
+AUDIT_SHEETS_REFRESHING = threading.Event()
+AUDIT_SHEETS_CACHE = {'records': None, 'loaded_at': 0.0, 'counts': {}, 'payload_bytes': None}
 
 SCRAP_SCREENS_SHEET_CSV_URL = (
     'https://docs.google.com/spreadsheets/d/'
@@ -1169,6 +1171,37 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if path == '/api/audits/sheets-data':
             self.send_audit_sheets_data()
             return
+        if path == '/api/audits/not-applicable':
+            if not self.get_authenticated_user():
+                return
+            with self.database() as connection:
+                connection.execute('''
+                    CREATE TABLE IF NOT EXISTS audit_not_applicable (
+                        date_key TEXT NOT NULL,
+                        line_code TEXT NOT NULL,
+                        form_key TEXT NOT NULL,
+                        marked_by TEXT NOT NULL DEFAULT '',
+                        updated_at INTEGER NOT NULL,
+                        PRIMARY KEY (date_key, line_code, form_key)
+                    )
+                ''')
+                rows = connection.execute(
+                    'SELECT date_key, line_code, form_key, marked_by, updated_at '
+                    'FROM audit_not_applicable ORDER BY updated_at DESC'
+                ).fetchall()
+            self.send_json(200, {
+                'entries': [
+                    {
+                        'dateKey': row['date_key'],
+                        'lineCode': row['line_code'],
+                        'formKey': row['form_key'],
+                        'markedBy': row['marked_by'],
+                        'updatedAt': row['updated_at']
+                    }
+                    for row in rows
+                ]
+            })
+            return
         if path == '/api/scrap-screens/scanner':
             if not self.get_authenticated_user():
                 return
@@ -1395,6 +1428,70 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if path == '/api/audits/not-applicable':
+            if not self.require_same_origin():
+                return
+            user = self.get_authenticated_user()
+            if not user:
+                return
+            body = self.read_json_body()
+            if body is None:
+                return
+            date_key = str(body.get('dateKey', '')).strip()
+            line_code = str(body.get('lineCode', '')).strip()
+            form_key = str(body.get('formKey', '')).strip()
+            not_applicable = bool(body.get('notApplicable', False))
+            if (
+                not re.fullmatch(r'\d{4}-\d{2}-\d{2}', date_key) or
+                not line_code or len(line_code) > 60 or
+                not form_key or len(form_key) > 40
+            ):
+                self.send_json(400, {'error': 'Parámetros inválidos para marcar No aplica.'})
+                return
+            now = int(time.time())
+            marked_by = str(user.get('fullName') or user.get('username') or '').strip()
+            with self.database() as connection:
+                connection.execute('''
+                    CREATE TABLE IF NOT EXISTS audit_not_applicable (
+                        date_key TEXT NOT NULL,
+                        line_code TEXT NOT NULL,
+                        form_key TEXT NOT NULL,
+                        marked_by TEXT NOT NULL DEFAULT '',
+                        updated_at INTEGER NOT NULL,
+                        PRIMARY KEY (date_key, line_code, form_key)
+                    )
+                ''')
+                if not_applicable:
+                    connection.execute('''
+                        INSERT INTO audit_not_applicable (date_key, line_code, form_key, marked_by, updated_at)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(date_key, line_code, form_key) DO UPDATE SET
+                            marked_by = excluded.marked_by,
+                            updated_at = excluded.updated_at
+                    ''', (date_key, line_code, form_key, marked_by, now))
+                else:
+                    connection.execute(
+                        'DELETE FROM audit_not_applicable WHERE date_key = ? AND line_code = ? AND form_key = ?',
+                        (date_key, line_code, form_key)
+                    )
+                rows = connection.execute(
+                    'SELECT date_key, line_code, form_key, marked_by, updated_at '
+                    'FROM audit_not_applicable ORDER BY updated_at DESC'
+                ).fetchall()
+            self.send_json(200, {
+                'ok': True,
+                'entries': [
+                    {
+                        'dateKey': row['date_key'],
+                        'lineCode': row['line_code'],
+                        'formKey': row['form_key'],
+                        'markedBy': row['marked_by'],
+                        'updatedAt': row['updated_at']
+                    }
+                    for row in rows
+                ]
+            })
+            return
         if path == '/api/quality-team':
             if not self.require_same_origin() or not self.require_admin():
                 return
@@ -2172,319 +2269,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_error(502, f'No se pudieron cargar los datos de Eventos TV: {error}')
 
     def send_audit_sheets_data(self):
-            try:
-                parameters = parse_qs(urlparse(self.path).query)
-                force_refresh = parameters.get('refresh', [''])[0] == '1'
-                with AUDIT_SHEETS_CACHE_LOCK:
-                    cache_age = time.time() - AUDIT_SHEETS_CACHE['loaded_at']
-                    if (
-                        not force_refresh and
-                        AUDIT_SHEETS_CACHE['records'] is not None and
-                        cache_age < SCRAP_SCREENS_CACHE_TTL_SECONDS
-                    ):
-                        records = AUDIT_SHEETS_CACHE['records']
-                        counts = AUDIT_SHEETS_CACHE['counts']
-                        loaded_at = int(AUDIT_SHEETS_CACHE['loaded_at'])
-                    else:
-                        all_records = []
-                        counts = {}
-
-                        def parse_audit_date(raw):
-                            m = re.match(r'^\s*(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})', str(raw or ''))
-                            if m:
-                                d, mth, y = m.groups()
-                                return f"{y}-{int(mth):02d}-{int(d):02d}"
-                            return ''
-
-                        def normalize_audit_line(line):
-                            l = str(line or '').upper()
-                            if 'CELDA 1' in l: return 'CELDA 1 (OLED 55")'
-                            if 'CELDA 2' in l: return 'CELDA 2 (QLED 65")'
-                            if 'LCD 6' in l or 'LCD6' in l: return 'LCD 6 (UHD 50")'
-                            if 'LCD 8' in l or 'LCD8' in l: return 'LCD 8 (FHD 43")'
-                            if 'CELDA 3' in l: return 'CELDA 3 (HD 32")'
-                            if 'INSERCION' in l or 'PLACAS' in l or 'PLACA' in l: return 'INSERCIÓN PLACAS'
-                            return line or 'Sin línea'
-
-                        def fetch_csv(url, timeout=20):
-                            if not url: return []
-                            try:
-                                req = urllib.request.Request(url, headers={'User-Agent': 'CalidadSuitePlanta5/1.0'})
-                                with urllib.request.urlopen(req, timeout=timeout) as resp:
-                                    content = resp.read().decode('utf-8', errors='replace')
-                                    return list(csv.reader(io.StringIO(content)))
-                            except Exception as e:
-                                print(f"Error fetching {url}: {e}")
-                                return []
-
-                        # 1. ESD - Pulseras
-                        try:
-                            rows = fetch_csv(AUDIT_SHEETS_CONFIG['esd']['url'])
-                            sessions = defaultdict(list)
-                            for r in rows[1:]:
-                                if r and r[0].strip():
-                                    sessions[(r[0].strip(), r[1].strip() if len(r)>1 else '')].append(r)
-                            esd_records = []
-                            for idx, ((ts, raw_line), srows) in enumerate(sessions.items(), start=1):
-                                date_key = parse_audit_date(ts)
-                                norm_line = normalize_audit_line(raw_line)
-                                auditor = srows[0][2].strip() if len(srows[0])>2 else ''
-                                shift = srows[0][3].strip() if len(srows[0])>3 else ''
-                                model = srows[0][4].strip() if len(srows[0])>4 else ''
-                                ng_items = []
-                                audited_items = []
-                                for r in srows:
-                                    puesto = r[5].strip() if len(r)>5 else ''
-                                    cod_t = r[6].strip() if len(r)>6 else ''
-                                    desc_t = r[7].strip() if len(r)>7 else ''
-                                    pulsera = r[8].strip() if len(r)>8 else ''
-                                    conf = r[9].strip().upper() if len(r)>9 else ''
-                                    row_is_ng = ('NO CONFORME' in conf or pulsera.upper() == 'NG' or cod_t.upper() in ('NE', 'NP', 'NG'))
-                                    if row_is_ng:
-                                        ng_items.append(f"Puesto {puesto}: {desc_t or cod_t} (Pulsera: {pulsera})")
-                                    audited_items.append({
-                                        'label': f"Puesto {puesto}" if puesto else 'Puesto',
-                                        'detail': f"Pulsera: {pulsera or '-'} · Estado: {desc_t or cod_t or conf or '-'}",
-                                        'status': 'NG' if row_is_ng else 'OK',
-                                        'isNg': row_is_ng
-                                    })
-                                is_ng = len(ng_items) > 0
-                                esd_records.append({
-                                    'id': f"sheet-esd-{idx}",
-                                    'formKey': 'esd',
-                                    'formName': 'PULSERAS ESD',
-                                    'line': norm_line,
-                                    'rawLine': raw_line,
-                                    'dateKey': date_key,
-                                    'timestamp': ts,
-                                    'auditor': auditor,
-                                    'turno': shift,
-                                    'model': model,
-                                    'status': 'No Conforme' if is_ng else 'Conforme',
-                                    'isNg': is_ng,
-                                    'ngItems': ng_items,
-                                    'auditedItems': audited_items,
-                                    'puestosCount': len(srows),
-                                    'source': 'Google Sheets · Pulseras'
-                                })
-                            all_records.extend(esd_records)
-                            counts['esd'] = len(esd_records)
-                        except Exception as e:
-                            counts['esd'] = 0
-
-                        # 2. Torque
-                        try:
-                            rows = fetch_csv(AUDIT_SHEETS_CONFIG['torque']['url'])
-                            sessions = defaultdict(list)
-                            for r in rows[1:]:
-                                if r and r[0].strip():
-                                    sessions[(r[0].strip(), r[1].strip() if len(r)>1 else '')].append(r)
-                            torque_records = []
-                            for idx, ((ts, raw_line), srows) in enumerate(sessions.items(), start=1):
-                                date_key = parse_audit_date(ts)
-                                norm_line = normalize_audit_line(raw_line)
-                                shift = srows[0][2].strip() if len(srows[0])>2 else ''
-                                auditor = srows[0][3].strip() if len(srows[0])>3 else ''
-                                model = srows[0][4].strip() if len(srows[0])>4 else ''
-                                ng_items = []
-                                audited_items = []
-                                for r in srows:
-                                    puesto = r[5].strip() if len(r)>5 else ''
-                                    min_t = r[6].strip() if len(r)>6 else ''
-                                    max_t = r[7].strip() if len(r)>7 else ''
-                                    num_at = r[8].strip() if len(r)>8 else ''
-                                    prisionero = r[9].strip().upper() if len(r)>9 else ''
-                                    torque_med = r[10].strip() if len(r)>10 else ''
-                                    est = r[14].strip().upper() if len(r)>14 else ''
-                                    row_is_ng = (est == 'NG' or prisionero == 'NG' or 'NO' in est)
-                                    if row_is_ng:
-                                        ng_items.append(f"Puesto {puesto} (Atornilladora {num_at}): Torque {torque_med} kgf*cm [{min_t}-{max_t}]")
-                                    audited_items.append({
-                                        'label': f"Puesto {puesto}" + (f" (Atorn. {num_at})" if num_at else ''),
-                                        'detail': f"Medido: {torque_med or '-'} kgf*cm · Rango [{min_t or '-'}-{max_t or '-'}] · Prisionero: {prisionero or '-'} · Est: {est or ('NG' if row_is_ng else 'OK')}",
-                                        'status': 'NG' if row_is_ng else 'OK',
-                                        'isNg': row_is_ng
-                                    })
-                                is_ng = len(ng_items) > 0
-                                torque_records.append({
-                                    'id': f"sheet-torque-{idx}",
-                                    'formKey': 'torque',
-                                    'formName': 'CONTROL DE TORQUE',
-                                    'line': norm_line,
-                                    'rawLine': raw_line,
-                                    'dateKey': date_key,
-                                    'timestamp': ts,
-                                    'auditor': auditor,
-                                    'turno': shift,
-                                    'model': model,
-                                    'status': 'No Conforme' if is_ng else 'Conforme',
-                                    'isNg': is_ng,
-                                    'ngItems': ng_items,
-                                    'auditedItems': audited_items,
-                                    'puestosCount': len(srows),
-                                    'source': 'Google Sheets · Torque'
-                                })
-                            all_records.extend(torque_records)
-                            counts['torque'] = len(torque_records)
-                        except Exception as e:
-                            counts['torque'] = 0
-
-                        def parse_checklist_records(sheet_url, form_key, form_name, source_label, max_col, obs_col):
-                            rows = fetch_csv(sheet_url)
-                            header = rows[0] if rows else []
-                            parsed = []
-                            for idx, r in enumerate(rows[1:], start=1):
-                                if not r or not r[0].strip():
-                                    continue
-                                ts = r[0].strip()
-                                date_key = parse_audit_date(ts)
-                                raw_line = r[1].strip() if len(r) > 1 else ''
-                                norm_line = normalize_audit_line(raw_line)
-                                shift = r[2].strip() if len(r) > 2 else ''
-                                auditor = r[3].strip() if len(r) > 3 else ''
-                                supervisor = r[4].strip() if len(r) > 4 else ''
-                                model = r[5].strip() if len(r) > 5 else ''
-                                lote = r[6].strip() if len(r) > 6 else ''
-                                conf_gen = r[7].strip().upper() if len(r) > 7 else ''
-                                ng_items = []
-                                audited_items = []
-                                for col_idx in range(8, min(max_col, len(r))):
-                                    raw_val = r[col_idx].strip()
-                                    val = raw_val.upper()
-                                    item_is_ng = ('NG' in val or 'NO CONFORME' in val or val == 'NO')
-                                    item_name = header[col_idx].strip() if col_idx < len(header) and header[col_idx].strip() else f"Ítem {col_idx}"
-                                    if item_is_ng:
-                                        ng_items.append(f"{item_name}: NG")
-                                    if raw_val:
-                                        audited_items.append({
-                                            'label': item_name,
-                                            'detail': raw_val,
-                                            'status': 'NG' if item_is_ng else 'OK',
-                                            'isNg': item_is_ng
-                                        })
-                                obs_text = r[obs_col].strip() if len(r) > obs_col else ''
-                                if obs_text and obs_text != '-':
-                                    ng_items.append(f"Desvío: {obs_text}")
-                                    audited_items.append({
-                                        'label': 'Observación / Desvío reportado',
-                                        'detail': obs_text,
-                                        'status': 'NG',
-                                        'isNg': True
-                                    })
-                                is_ng = ('NO CONFORME' in conf_gen or len(ng_items) > 0)
-                                parsed.append({
-                                    'id': f"sheet-{form_key}-{idx}",
-                                    'formKey': form_key,
-                                    'formName': form_name,
-                                    'line': norm_line,
-                                    'rawLine': raw_line,
-                                    'dateKey': date_key,
-                                    'timestamp': ts,
-                                    'auditor': auditor,
-                                    'supervisor': supervisor,
-                                    'turno': shift,
-                                    'model': model,
-                                    'lote': lote,
-                                    'observacion': obs_text if obs_text and obs_text != '-' else '',
-                                    'status': 'No Conforme' if is_ng else 'Conforme',
-                                    'isNg': is_ng,
-                                    'ngItems': ng_items,
-                                    'auditedItems': audited_items,
-                                    'source': source_label
-                                })
-                            return parsed
-
-                        # 3. Inicio Turno (TV)
-                        try:
-                            it_records = parse_checklist_records(
-                                AUDIT_SHEETS_CONFIG['inicio_turno']['url'],
-                                'inicio_turno', 'CHECKLIST INICIO DE TURNO',
-                                'Google Sheets · Inicio Turno', 26, 26
-                            )
-                            all_records.extend(it_records)
-                            counts['inicio_turno'] = len(it_records)
-                        except Exception as e:
-                            counts['inicio_turno'] = 0
-
-                        # 4. Cambio Modelo (TV)
-                        try:
-                            cm_records = parse_checklist_records(
-                                AUDIT_SHEETS_CONFIG['cambio_modelo']['url'],
-                                'cambio_modelo', 'CAMBIO DE MODELO (RG-0220 / RG-0772)',
-                                'Google Sheets · Cambio Modelo TV', 29, 29
-                            )
-                            rows_cmp = fetch_csv(AUDIT_SHEETS_CONFIG['cambio_modelo']['pautas_url'])
-                            for r in rows_cmp[1:]:
-                                ts = r[0].strip() if len(r) > 0 else ''
-                                if not ts:
-                                    continue
-                                puesto = r[8].strip() if len(r) > 8 else ''
-                                pauta_val = r[9].strip() if len(r) > 9 else ''
-                                est_pauta = r[7].strip() if len(r) > 7 else ''
-                                obs = r[11].strip() if len(r) > 11 else ''
-                                pauta_is_ng = (len(r) > 9 and (pauta_val.upper() == 'NG' or 'NO' in est_pauta.upper()))
-                                for rec in cm_records:
-                                    if rec['timestamp'] == ts:
-                                        rec['auditedItems'].append({
-                                            'label': f"Pauta Puesto {puesto or '-'}",
-                                            'detail': obs or f"Estado: {pauta_val or est_pauta or 'OK'}",
-                                            'status': 'NG' if pauta_is_ng else 'OK',
-                                            'isNg': pauta_is_ng
-                                        })
-                                        if pauta_is_ng:
-                                            rec['ngItems'].append(f"Puesto {puesto}: {obs or 'Desvío en pauta'}")
-                                            rec['isNg'] = True
-                                            rec['status'] = 'No Conforme'
-                            all_records.extend(cm_records)
-                            counts['cambio_modelo'] = len(cm_records)
-                        except Exception as e:
-                            counts['cambio_modelo'] = 0
-
-                        # 5. IM Diario
-                        try:
-                            imd_records = parse_checklist_records(
-                                AUDIT_SHEETS_CONFIG['im_diario']['url'],
-                                'im_diario', 'INICIO PRODUCCIÓN DIARIO DE IM',
-                                'Google Sheets · IM Diario', 27, 27
-                            )
-                            all_records.extend(imd_records)
-                            counts['im_diario'] = len(imd_records)
-                        except Exception as e:
-                            counts['im_diario'] = 0
-
-                        # 6. IM Cambio Modelo / Pautas
-                        try:
-                            imc_records = parse_checklist_records(
-                                AUDIT_SHEETS_CONFIG['im_cambio']['url'],
-                                'im_cambio', 'SEGUIMIENTO DE PAUTAS / CAMBIO DE MODELO IM',
-                                'Google Sheets · IM Cambio Modelo', 21, 21
-                            )
-                            all_records.extend(imc_records)
-                            counts['im_cambio'] = len(imc_records)
-                        except Exception as e:
-                            counts['im_cambio'] = 0
-
-                        counts['totalAudits'] = len(all_records)
-                        records = all_records
-                        AUDIT_SHEETS_CACHE['records'] = records
-                        AUDIT_SHEETS_CACHE['counts'] = counts
-                        AUDIT_SHEETS_CACHE['loaded_at'] = time.time()
-                        loaded_at = int(AUDIT_SHEETS_CACHE['loaded_at'])
-
-                payload = json.dumps({
-                    'success': True,
-                    'records': records,
-                    'counts': counts,
-                    'sources': {k: {'title': v['title'], 'active': v['active']} for k, v in AUDIT_SHEETS_CONFIG.items()},
-                    'fetchedAt': loaded_at
-                }, ensure_ascii=False).encode('utf-8')
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json; charset=utf-8')
-                self.send_header('Content-Length', str(len(payload)))
-                self.end_headers()
-                self.wfile.write(payload)
-            except Exception as error:
-                self.send_error(502, f'No se pudieron cargar los datos de auditorías de Google Sheets: {error}')
+        try:
+            parameters = parse_qs(urlparse(self.path).query)
+            force_refresh = parameters.get('refresh', [''])[0] == '1'
+            payload = get_audit_sheets_payload(force_refresh=force_refresh)
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        except Exception as error:
+            self.send_error(502, f'No se pudieron cargar los datos de auditorías de Google Sheets: {error}')
 
     def send_scrap_screens_data(self):
         try:
@@ -2887,6 +2682,347 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Expires', '0')
         super().end_headers()
 
+
+
+def _build_audit_sheets_snapshot():
+    all_records = []
+    counts = {}
+
+    def parse_audit_date(raw):
+        m = re.match(r'^\s*(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})', str(raw or ''))
+        if m:
+            d, mth, y = m.groups()
+            return f"{y}-{int(mth):02d}-{int(d):02d}"
+        return ''
+
+    def normalize_audit_line(line):
+        l = str(line or '').upper()
+        if 'CELDA 1' in l: return 'CELDA 1 (OLED 55")'
+        if 'CELDA 2' in l: return 'CELDA 2 (QLED 65")'
+        if 'LCD 6' in l or 'LCD6' in l: return 'LCD 6 (UHD 50")'
+        if 'LCD 8' in l or 'LCD8' in l: return 'LCD 8 (FHD 43")'
+        if 'CELDA 3' in l: return 'CELDA 3 (HD 32")'
+        if 'INSERCION' in l or 'PLACAS' in l or 'PLACA' in l: return 'INSERCIÓN PLACAS'
+        return line or 'Sin línea'
+
+    def fetch_csv(url, timeout=20):
+        if not url:
+            return []
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'CalidadSuitePlanta5/1.0'})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                content = resp.read().decode('utf-8', errors='replace')
+                return list(csv.reader(io.StringIO(content)))
+        except Exception as e:
+            print(f"Error fetching {url}: {e}")
+            return []
+
+    url_map = {
+        'esd': AUDIT_SHEETS_CONFIG['esd']['url'],
+        'torque': AUDIT_SHEETS_CONFIG['torque']['url'],
+        'inicio_turno': AUDIT_SHEETS_CONFIG['inicio_turno']['url'],
+        'cambio_modelo': AUDIT_SHEETS_CONFIG['cambio_modelo']['url'],
+        'cambio_modelo_pautas': AUDIT_SHEETS_CONFIG['cambio_modelo']['pautas_url'],
+        'im_diario': AUDIT_SHEETS_CONFIG['im_diario']['url'],
+        'im_cambio': AUDIT_SHEETS_CONFIG['im_cambio']['url'],
+    }
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(url_map)) as executor:
+        csv_map = dict(zip(url_map.keys(), executor.map(fetch_csv, url_map.values())))
+
+    # 1. ESD - Pulseras
+    try:
+        rows = csv_map.get('esd') or []
+        sessions = defaultdict(list)
+        for r in rows[1:]:
+            if r and r[0].strip():
+                sessions[(r[0].strip(), r[1].strip() if len(r) > 1 else '')].append(r)
+        esd_records = []
+        for idx, ((ts, raw_line), srows) in enumerate(sessions.items(), start=1):
+            date_key = parse_audit_date(ts)
+            norm_line = normalize_audit_line(raw_line)
+            auditor = srows[0][2].strip() if len(srows[0]) > 2 else ''
+            shift = srows[0][3].strip() if len(srows[0]) > 3 else ''
+            model = srows[0][4].strip() if len(srows[0]) > 4 else ''
+            ng_items = []
+            audited_items = []
+            for r in srows:
+                puesto = r[5].strip() if len(r) > 5 else ''
+                cod_t = r[6].strip() if len(r) > 6 else ''
+                desc_t = r[7].strip() if len(r) > 7 else ''
+                pulsera = r[8].strip() if len(r) > 8 else ''
+                conf = r[9].strip().upper() if len(r) > 9 else ''
+                row_is_ng = ('NO CONFORME' in conf or pulsera.upper() == 'NG' or cod_t.upper() in ('NE', 'NP', 'NG'))
+                if row_is_ng:
+                    ng_items.append(f"Puesto {puesto}: {desc_t or cod_t} (Pulsera: {pulsera})")
+                audited_items.append({
+                    'label': f"Puesto {puesto}" if puesto else 'Puesto',
+                    'detail': f"Pulsera: {pulsera or '-'} · Estado: {desc_t or cod_t or conf or '-'}",
+                    'status': 'NG' if row_is_ng else 'OK',
+                    'isNg': row_is_ng
+                })
+            is_ng = len(ng_items) > 0
+            esd_records.append({
+                'id': f"sheet-esd-{idx}",
+                'formKey': 'esd',
+                'formName': 'PULSERAS ESD',
+                'line': norm_line,
+                'rawLine': raw_line,
+                'dateKey': date_key,
+                'timestamp': ts,
+                'auditor': auditor,
+                'turno': shift,
+                'model': model,
+                'status': 'No Conforme' if is_ng else 'Conforme',
+                'isNg': is_ng,
+                'ngItems': ng_items,
+                'auditedItems': audited_items,
+                'puestosCount': len(srows),
+                'source': 'Google Sheets · Pulseras'
+            })
+        all_records.extend(esd_records)
+        counts['esd'] = len(esd_records)
+    except Exception:
+        counts['esd'] = 0
+
+    # 2. Torque
+    try:
+        rows = csv_map.get('torque') or []
+        sessions = defaultdict(list)
+        for r in rows[1:]:
+            if r and r[0].strip():
+                sessions[(r[0].strip(), r[1].strip() if len(r) > 1 else '')].append(r)
+        torque_records = []
+        for idx, ((ts, raw_line), srows) in enumerate(sessions.items(), start=1):
+            date_key = parse_audit_date(ts)
+            norm_line = normalize_audit_line(raw_line)
+            shift = srows[0][2].strip() if len(srows[0]) > 2 else ''
+            auditor = srows[0][3].strip() if len(srows[0]) > 3 else ''
+            model = srows[0][4].strip() if len(srows[0]) > 4 else ''
+            ng_items = []
+            audited_items = []
+            for r in srows:
+                puesto = r[5].strip() if len(r) > 5 else ''
+                min_t = r[6].strip() if len(r) > 6 else ''
+                max_t = r[7].strip() if len(r) > 7 else ''
+                num_at = r[8].strip() if len(r) > 8 else ''
+                prisionero = r[9].strip().upper() if len(r) > 9 else ''
+                torque_med = r[10].strip() if len(r) > 10 else ''
+                est = r[14].strip().upper() if len(r) > 14 else ''
+                row_is_ng = (est == 'NG' or prisionero == 'NG' or 'NO' in est)
+                if row_is_ng:
+                    ng_items.append(f"Puesto {puesto} (Atornilladora {num_at}): Torque {torque_med} kgf*cm [{min_t}-{max_t}]")
+                audited_items.append({
+                    'label': f"Puesto {puesto}" + (f" (Atorn. {num_at})" if num_at else ''),
+                    'detail': f"Medido: {torque_med or '-'} kgf*cm · Rango [{min_t or '-'}-{max_t or '-'}] · Prisionero: {prisionero or '-'} · Est: {est or ('NG' if row_is_ng else 'OK')}",
+                    'status': 'NG' if row_is_ng else 'OK',
+                    'isNg': row_is_ng
+                })
+            is_ng = len(ng_items) > 0
+            torque_records.append({
+                'id': f"sheet-torque-{idx}",
+                'formKey': 'torque',
+                'formName': 'CONTROL DE TORQUE',
+                'line': norm_line,
+                'rawLine': raw_line,
+                'dateKey': date_key,
+                'timestamp': ts,
+                'auditor': auditor,
+                'turno': shift,
+                'model': model,
+                'status': 'No Conforme' if is_ng else 'Conforme',
+                'isNg': is_ng,
+                'ngItems': ng_items,
+                'auditedItems': audited_items,
+                'puestosCount': len(srows),
+                'source': 'Google Sheets · Torque'
+            })
+        all_records.extend(torque_records)
+        counts['torque'] = len(torque_records)
+    except Exception:
+        counts['torque'] = 0
+
+    def parse_checklist_records(rows, form_key, form_name, source_label, max_col, obs_col):
+        header = rows[0] if rows else []
+        parsed = []
+        for idx, r in enumerate(rows[1:], start=1):
+            if not r or not r[0].strip():
+                continue
+            ts = r[0].strip()
+            date_key = parse_audit_date(ts)
+            raw_line = r[1].strip() if len(r) > 1 else ''
+            norm_line = normalize_audit_line(raw_line)
+            shift = r[2].strip() if len(r) > 2 else ''
+            auditor = r[3].strip() if len(r) > 3 else ''
+            supervisor = r[4].strip() if len(r) > 4 else ''
+            model = r[5].strip() if len(r) > 5 else ''
+            lote = r[6].strip() if len(r) > 6 else ''
+            conf_gen = r[7].strip().upper() if len(r) > 7 else ''
+            ng_items = []
+            audited_items = []
+            for col_idx in range(8, min(max_col, len(r))):
+                raw_val = r[col_idx].strip()
+                val = raw_val.upper()
+                item_is_ng = ('NG' in val or 'NO CONFORME' in val or val == 'NO')
+                item_name = header[col_idx].strip() if col_idx < len(header) and header[col_idx].strip() else f"Ítem {col_idx}"
+                if item_is_ng:
+                    ng_items.append(f"{item_name}: NG")
+                if raw_val:
+                    audited_items.append({
+                        'label': item_name,
+                        'detail': raw_val,
+                        'status': 'NG' if item_is_ng else 'OK',
+                        'isNg': item_is_ng
+                    })
+            obs_text = r[obs_col].strip() if len(r) > obs_col else ''
+            if obs_text and obs_text != '-':
+                ng_items.append(f"Desvío: {obs_text}")
+                audited_items.append({
+                    'label': 'Observación / Desvío reportado',
+                    'detail': obs_text,
+                    'status': 'NG',
+                    'isNg': True
+                })
+            is_ng = ('NO CONFORME' in conf_gen or len(ng_items) > 0)
+            parsed.append({
+                'id': f"sheet-{form_key}-{idx}",
+                'formKey': form_key,
+                'formName': form_name,
+                'line': norm_line,
+                'rawLine': raw_line,
+                'dateKey': date_key,
+                'timestamp': ts,
+                'auditor': auditor,
+                'supervisor': supervisor,
+                'turno': shift,
+                'model': model,
+                'lote': lote,
+                'observacion': obs_text if obs_text and obs_text != '-' else '',
+                'status': 'No Conforme' if is_ng else 'Conforme',
+                'isNg': is_ng,
+                'ngItems': ng_items,
+                'auditedItems': audited_items,
+                'source': source_label
+            })
+        return parsed
+
+    # 3. Inicio Turno (TV)
+    try:
+        it_records = parse_checklist_records(
+            csv_map.get('inicio_turno') or [],
+            'inicio_turno', 'CHECKLIST INICIO DE TURNO',
+            'Google Sheets · Inicio Turno', 26, 26
+        )
+        all_records.extend(it_records)
+        counts['inicio_turno'] = len(it_records)
+    except Exception:
+        counts['inicio_turno'] = 0
+
+    # 4. Cambio Modelo (TV)
+    try:
+        cm_records = parse_checklist_records(
+            csv_map.get('cambio_modelo') or [],
+            'cambio_modelo', 'CAMBIO DE MODELO (RG-0220 / RG-0772)',
+            'Google Sheets · Cambio Modelo TV', 29, 29
+        )
+        rows_cmp = csv_map.get('cambio_modelo_pautas') or []
+        for r in rows_cmp[1:]:
+            ts = r[0].strip() if len(r) > 0 else ''
+            if not ts:
+                continue
+            puesto = r[8].strip() if len(r) > 8 else ''
+            pauta_val = r[9].strip() if len(r) > 9 else ''
+            est_pauta = r[7].strip() if len(r) > 7 else ''
+            obs = r[11].strip() if len(r) > 11 else ''
+            pauta_is_ng = (len(r) > 9 and (pauta_val.upper() == 'NG' or 'NO' in est_pauta.upper()))
+            for rec in cm_records:
+                if rec['timestamp'] == ts:
+                    rec['auditedItems'].append({
+                        'label': f"Pauta Puesto {puesto or '-'}",
+                        'detail': obs or f"Estado: {pauta_val or est_pauta or 'OK'}",
+                        'status': 'NG' if pauta_is_ng else 'OK',
+                        'isNg': pauta_is_ng
+                    })
+                    if pauta_is_ng:
+                        rec['ngItems'].append(f"Puesto {puesto}: {obs or 'Desvío en pauta'}")
+                        rec['isNg'] = True
+                        rec['status'] = 'No Conforme'
+        all_records.extend(cm_records)
+        counts['cambio_modelo'] = len(cm_records)
+    except Exception:
+        counts['cambio_modelo'] = 0
+
+    # 5. IM Diario
+    try:
+        imd_records = parse_checklist_records(
+            csv_map.get('im_diario') or [],
+            'im_diario', 'INICIO PRODUCCIÓN DIARIO DE IM',
+            'Google Sheets · IM Diario', 27, 27
+        )
+        all_records.extend(imd_records)
+        counts['im_diario'] = len(imd_records)
+    except Exception:
+        counts['im_diario'] = 0
+
+    # 6. IM Cambio Modelo / Pautas
+    try:
+        imc_records = parse_checklist_records(
+            csv_map.get('im_cambio') or [],
+            'im_cambio', 'SEGUIMIENTO DE PAUTAS / CAMBIO DE MODELO IM',
+            'Google Sheets · IM Cambio Modelo', 21, 21
+        )
+        all_records.extend(imc_records)
+        counts['im_cambio'] = len(imc_records)
+    except Exception:
+        counts['im_cambio'] = 0
+
+    counts['totalAudits'] = len(all_records)
+    loaded_at = int(time.time())
+    payload_bytes = json.dumps({
+        'success': True,
+        'records': all_records,
+        'counts': counts,
+        'sources': {k: {'title': v['title'], 'active': v['active']} for k, v in AUDIT_SHEETS_CONFIG.items()},
+        'fetchedAt': loaded_at
+    }, ensure_ascii=False).encode('utf-8')
+    return all_records, counts, float(loaded_at), payload_bytes
+
+
+def refresh_audit_sheets_snapshot_sync():
+    with AUDIT_SHEETS_REFRESH_LOCK:
+        AUDIT_SHEETS_REFRESHING.set()
+        try:
+            records, counts, loaded_at, payload_bytes = _build_audit_sheets_snapshot()
+            with AUDIT_SHEETS_CACHE_LOCK:
+                AUDIT_SHEETS_CACHE['records'] = records
+                AUDIT_SHEETS_CACHE['counts'] = counts
+                AUDIT_SHEETS_CACHE['loaded_at'] = loaded_at
+                AUDIT_SHEETS_CACHE['payload_bytes'] = payload_bytes
+            return payload_bytes
+        finally:
+            AUDIT_SHEETS_REFRESHING.clear()
+
+
+def refresh_audit_sheets_in_background():
+    if AUDIT_SHEETS_REFRESHING.is_set():
+        return
+    threading.Thread(
+        target=refresh_audit_sheets_snapshot_sync,
+        name='audit-sheets-refresh',
+        daemon=True
+    ).start()
+
+
+def get_audit_sheets_payload(force_refresh=False):
+    if not force_refresh:
+        with AUDIT_SHEETS_CACHE_LOCK:
+            payload_bytes = AUDIT_SHEETS_CACHE.get('payload_bytes')
+            cache_age = time.time() - AUDIT_SHEETS_CACHE['loaded_at']
+        if payload_bytes is not None:
+            if cache_age >= SCRAP_SCREENS_CACHE_TTL_SECONDS:
+                refresh_audit_sheets_in_background()
+            return payload_bytes
+    return refresh_audit_sheets_snapshot_sync()
+
 class ThreadingServer(socketserver.ThreadingTCPServer):
     daemon_threads = True
     allow_reuse_address = True
@@ -2900,6 +3036,7 @@ def run():
     with ThreadingServer(("", PORT), Handler) as httpd:
         refresh_scrap_screens_in_background()
         refresh_scrap_scanner_payload_in_background()
+        refresh_audit_sheets_in_background()
         url = f"http://localhost:{PORT}"
         print("=" * 60)
         print("[OK] CALIDAD SUITE - PLANTA 5 (PRODUCCION DE TV)")
@@ -2947,6 +3084,14 @@ def initialize_auth_database():
                 expires_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expires_at);
+            CREATE TABLE IF NOT EXISTS audit_not_applicable (
+                date_key TEXT NOT NULL,
+                line_code TEXT NOT NULL,
+                form_key TEXT NOT NULL,
+                marked_by TEXT NOT NULL DEFAULT '',
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (date_key, line_code, form_key)
+            );
             CREATE TABLE IF NOT EXISTS im_change_audits (
                 source_id TEXT PRIMARY KEY,
                 lot TEXT NOT NULL,

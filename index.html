@@ -379,8 +379,9 @@
 
             <div id="dashboardAuditDayDetails" class="mt-5 hidden rounded-xl border border-slate-200 bg-slate-50/60 p-4" aria-live="polite"></div>
             <div class="flex flex-wrap items-center gap-4 mt-4 text-[10px] text-slate-500" aria-label="Leyenda de estados">
-              <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-emerald-500"></span>Con auditorías realizadas</span>
-              <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-amber-400"></span>Con no conformidades (NG)</span>
+              <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-emerald-500"></span>Auditoría completa (OK)</span>
+              <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-amber-400"></span>Auditoría incompleta (falta cargar o marcar "No aplica")</span>
+              <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-rose-500"></span>Con no conformidades (NG)</span>
               <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-slate-200"></span>0 auditados</span>
               <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-slate-300"></span>Sin producción</span>
               <span class="flex items-center gap-1.5"><span class="h-2.5 w-2.5 rounded-sm bg-slate-100 border border-slate-200"></span>Fecha futura</span>
@@ -2863,7 +2864,7 @@
   </div>
 
   <!-- Scripts -->
-  <script src="app.js?v=20261110-minimal-confirm"></script>
+  <script src="app.js?v=20261111-line-rules-not-applicable"></script>
 
   <!-- MODAL: VISOR CARRUSEL DE FOTOS DE EVENTOS TV -->
   <div id="tvPhotoCarouselModal" class="fixed inset-0 z-[100] hidden items-center justify-center bg-slate-950/85 p-3 sm:p-6 backdrop-blur-sm" onclick="if(event.target===this) window.closeTvPhotoCarousel()">
