@@ -6752,7 +6752,7 @@ const LINE_AUDIT_REQUIREMENTS = {
   ],
   'INSERCIÓN MANUAL & JIG': [
     { key: 'im_diario', label: 'Inicio de Producción JIG', icon: '🏭', allowNotApplicable: false },
-    { key: 'im_cambio', label: 'Cambio de Modelo JIG', icon: '📘', allowNotApplicable: true, naHint: 'Activar si hoy no hubo cambio de modelo IM/JIG' },
+    { key: 'im_cambio', matchKeys: ['im_cambio', 'cambio_modelo'], label: 'Cambio de Modelo JIG', icon: '📘', allowNotApplicable: true, naHint: 'Activar si hoy no hubo cambio de modelo IM/JIG' },
     { key: 'esd', label: 'Pulseras ESD', icon: '⚡', allowNotApplicable: true, naHint: 'Activar si no requiere pulsera ESD' },
     { key: 'torque', label: 'Control de Torque', icon: '🔩', allowNotApplicable: true, naHint: 'Activar si no requiere torque' }
   ]
@@ -6805,6 +6805,7 @@ window.toggleAuditNotApplicable = async function(lineCode, dateKey, formKey, mak
   }
   saveAuditNotApplicableLocalCache();
   renderDashboardOverview();
+  refreshActiveMatrixPopover();
 
   try {
     const res = await requestAuthApi('/api/audits/not-applicable', {
@@ -6820,6 +6821,7 @@ window.toggleAuditNotApplicable = async function(lineCode, dateKey, formKey, mak
       auditNotApplicableEntries = res.entries;
       saveAuditNotApplicableLocalCache();
       renderDashboardOverview();
+      refreshActiveMatrixPopover();
     }
     showToast(
       makeNotApplicable ? 'Marcado como "No aplica" correctamente.' : 'Estado "No aplica" quitado.',
@@ -6829,6 +6831,7 @@ window.toggleAuditNotApplicable = async function(lineCode, dateKey, formKey, mak
     auditNotApplicableEntries = previous;
     saveAuditNotApplicableLocalCache();
     renderDashboardOverview();
+    refreshActiveMatrixPopover();
     showToast(err.message || 'No se pudo guardar el estado No aplica.', 'error');
   }
 };
@@ -6841,7 +6844,8 @@ function evaluateDailyLineAuditStatus(lineCode, dateKey, lineDayRecords, isFutur
   const ngCount = records.filter(r => isAuditRecordNonConforming(r)).length;
 
   const itemStatuses = rules.map(rule => {
-    const matching = records.filter(r => r.formKey === rule.key);
+    const matchKeys = Array.isArray(rule.matchKeys) ? rule.matchKeys : [rule.key];
+    const matching = records.filter(r => matchKeys.includes(r.formKey));
     const done = matching.length > 0;
     const naEntry = !done && rule.allowNotApplicable ? getAuditNotApplicableEntry(normLine, dateKey, rule.key) : null;
     const isNa = Boolean(naEntry);
@@ -6850,6 +6854,7 @@ function evaluateDailyLineAuditStatus(lineCode, dateKey, lineDayRecords, isFutur
     return {
       ...rule,
       count: matching.length,
+      records: matching,
       done,
       isNa,
       naEntry,
@@ -6890,15 +6895,95 @@ function evaluateDailyLineAuditStatus(lineCode, dateKey, lineDayRecords, isFutur
   };
 }
 
-function showMatrixHoverTooltip(targetElement, line, date, isFuture, productionStatus, lineDayRecords) {
+let activeMatrixPopover = null;
+let matrixTooltipHideTimer = null;
+let matrixPopoverOutsideBound = false;
+
+function ensureMatrixPopoverNode() {
   let tooltip = document.getElementById('matrixHoverTooltip');
   if (!tooltip) {
     tooltip = document.createElement('div');
     tooltip.id = 'matrixHoverTooltip';
-    tooltip.className = 'fixed z-[9999] pointer-events-none transition-all duration-150 ease-out opacity-0 translate-y-1 bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl shadow-2xl p-3.5 w-80 text-slate-800 text-xs';
+    tooltip.className = 'fixed z-[65] pointer-events-auto transition-all duration-150 ease-out opacity-0 translate-y-1 bg-white/98 backdrop-blur-md border border-slate-200 rounded-2xl shadow-2xl p-3.5 w-80 text-slate-800 text-xs';
     document.body.appendChild(tooltip);
   }
+  if (!tooltip.dataset.hoverBound) {
+    tooltip.dataset.hoverBound = '1';
+    tooltip.addEventListener('mouseenter', () => {
+      if (matrixTooltipHideTimer) {
+        clearTimeout(matrixTooltipHideTimer);
+        matrixTooltipHideTimer = null;
+      }
+    });
+    tooltip.addEventListener('mouseleave', () => {
+      hideMatrixHoverTooltip(false);
+    });
+  }
+  if (!matrixPopoverOutsideBound) {
+    matrixPopoverOutsideBound = true;
+    document.addEventListener('click', (e) => {
+      if (!activeMatrixPopover || !activeMatrixPopover.pinned) return;
+      const pop = document.getElementById('matrixHoverTooltip');
+      if (pop && pop.contains(e.target)) return;
+      if (e.target.closest('[data-matrix-cell="1"]')) return;
+      hideMatrixHoverTooltip(true);
+    });
+  }
+  return tooltip;
+}
 
+function positionMatrixPopover(tooltip, targetElement) {
+  if (!tooltip || !targetElement || !document.body.contains(targetElement)) return;
+  const rect = targetElement.getBoundingClientRect();
+  const tooltipWidth = 320;
+  let left = rect.left + (rect.width / 2) - (tooltipWidth / 2);
+  if (left < 12) left = 12;
+  if (left + tooltipWidth > window.innerWidth - 12) left = window.innerWidth - tooltipWidth - 12;
+
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = '0px';
+  tooltip.style.bottom = 'auto';
+  tooltip.classList.remove('hidden');
+
+  const h = tooltip.offsetHeight || 240;
+  const spaceAbove = rect.top - 12;
+  const spaceBelow = window.innerHeight - rect.bottom - 12;
+
+  if (spaceAbove >= h || spaceAbove >= spaceBelow) {
+    tooltip.style.top = 'auto';
+    tooltip.style.bottom = `${Math.max(12, window.innerHeight - rect.top + 8)}px`;
+  } else {
+    tooltip.style.bottom = 'auto';
+    tooltip.style.top = `${Math.min(window.innerHeight - h - 12, rect.bottom + 8)}px`;
+  }
+}
+
+function refreshActiveMatrixPopover() {
+  if (!activeMatrixPopover) return;
+  const pop = document.getElementById('matrixHoverTooltip');
+  if (!pop || pop.classList.contains('hidden')) return;
+  const { line, date, isFuture, pinned } = activeMatrixPopover;
+  const dateKey = getLocalDateKey(date);
+  const newBtn = document.querySelector(`[data-matrix-cell="1"][data-line-code="${CSS.escape(line.lineCode)}"][data-date-key="${CSS.escape(dateKey)}"]`) || activeMatrixPopover.targetElement;
+  const productionStatus = getLineProductionStatus(line.lineCode, dateKey);
+  const lineDayRecords = getDailyAuditRecordsForLine(line.lineCode, dateKey);
+  showMatrixHoverTooltip(newBtn, line, date, isFuture, productionStatus, lineDayRecords, Boolean(pinned));
+}
+
+function showMatrixHoverTooltip(targetElement, line, date, isFuture, productionStatus, lineDayRecords, pin = false) {
+  if (matrixTooltipHideTimer) {
+    clearTimeout(matrixTooltipHideTimer);
+    matrixTooltipHideTimer = null;
+  }
+
+  // Si ya hay otra tarjeta fijada con clic, no moverla al pasar el mouse hasta que el usuario haga clic o la cierre
+  if (!pin && activeMatrixPopover && activeMatrixPopover.pinned) {
+    const curKey = `${line.lineCode}::${getLocalDateKey(date)}`;
+    const pinnedKey = `${activeMatrixPopover.line.lineCode}::${getLocalDateKey(activeMatrixPopover.date)}`;
+    if (curKey !== pinnedKey) return;
+  }
+
+  const tooltip = ensureMatrixPopoverNode();
   const dateKey = getLocalDateKey(date);
   const dateLabel = new Intl.DateTimeFormat('es-AR', {
     weekday: 'long',
@@ -6909,6 +6994,9 @@ function showMatrixHoverTooltip(targetElement, line, date, isFuture, productionS
   const summary = evaluateDailyLineAuditStatus(line.lineCode, dateKey, lineDayRecords, isFuture, productionStatus);
   const count = summary.realCount;
   const ngCount = summary.ngCount;
+  const isPinned = Boolean(pin || (activeMatrixPopover && activeMatrixPopover.pinned && activeMatrixPopover.line.lineCode === line.lineCode && getLocalDateKey(activeMatrixPopover.date) === dateKey));
+
+  activeMatrixPopover = { targetElement, line, date, isFuture, pinned: isPinned };
 
   const dotClass = summary.visualState === 'incomplete'
     ? 'bg-amber-400 shadow-xs ring-2 ring-amber-100'
@@ -6918,406 +7006,266 @@ function showMatrixHoverTooltip(targetElement, line, date, isFuture, productionS
         ? 'bg-emerald-500 shadow-xs ring-2 ring-emerald-100'
         : 'bg-slate-300';
 
-  let contentHtml = `
-    <div class="flex items-center justify-between pb-2.5 border-b border-slate-100">
-      <div class="flex items-center gap-2">
-        <span class="w-2.5 h-2.5 rounded-full ${dotClass}"></span>
-        <span class="font-extrabold text-slate-900 text-xs tracking-tight">${escapeAuditReportText(line.lineCode)}</span>
-      </div>
+  tooltip.replaceChildren();
+
+  // Header de la tarjeta pequeña
+  const header = document.createElement('div');
+  header.className = 'flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100';
+  header.innerHTML = `
+    <div class="flex items-center gap-2 min-w-0">
+      <span class="w-2.5 h-2.5 rounded-full shrink-0 ${dotClass}"></span>
+      <span class="font-extrabold text-slate-900 text-xs tracking-tight truncate">${escapeAuditReportText(line.lineCode)}</span>
+    </div>
+    <div class="flex items-center gap-1.5 shrink-0">
       <span class="text-[10px] font-semibold text-slate-400 capitalize">${escapeAuditReportText(dateLabel)}</span>
+      ${isPinned ? '<button type="button" data-close-popover="1" class="ml-0.5 rounded-md p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 cursor-pointer" title="Cerrar">✕</button>' : ''}
     </div>
   `;
+  const closeBtn = header.querySelector('[data-close-popover="1"]');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      hideMatrixHoverTooltip(true);
+    });
+  }
+  tooltip.appendChild(header);
 
   if (isFuture) {
-    contentHtml += `
-      <div class="py-3 text-center text-slate-400 text-[11px] font-medium flex items-center justify-center gap-1.5">
-        <span>📅</span><span>Fecha futura sin iniciar</span>
-      </div>
-    `;
+    const fut = document.createElement('div');
+    fut.className = 'py-3 text-center text-slate-400 text-[11px] font-medium flex items-center justify-center gap-1.5';
+    fut.innerHTML = '<span>📅</span><span>Fecha futura sin iniciar</span>';
+    tooltip.appendChild(fut);
   } else if (productionStatus) {
-    contentHtml += `
-      <div class="py-2.5 text-slate-600 text-[11px]">
-        <div class="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">Sin producción</div>
-        <div class="text-[10.5px] text-slate-500 mt-1">${escapeAuditReportText(productionStatus.reason || 'No especificado')}</div>
+    const npWrap = document.createElement('div');
+    npWrap.className = 'py-2.5 space-y-2 text-[11px]';
+    npWrap.innerHTML = `
+      <div>
+        <span class="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">Sin producción</span>
+        <p class="text-[10.5px] text-slate-500 mt-1">${escapeAuditReportText(productionStatus.reason || 'No especificado')}</p>
       </div>
     `;
-  } else if (!summary.hasActivity) {
-    contentHtml += `
-      <div class="py-3 text-center text-slate-400 text-[11px] font-medium flex items-center justify-center gap-1.5">
-        <span class="text-slate-300">⚪</span><span>0 formularios registrados en BBDD</span>
-      </div>
-    `;
+    const reactBtn = document.createElement('button');
+    reactBtn.type = 'button';
+    reactBtn.className = 'w-full rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[10.5px] font-bold text-emerald-700 hover:bg-emerald-100 transition cursor-pointer';
+    reactBtn.textContent = 'Reactivar producción';
+    reactBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setLineProductionStatus(line, date, true);
+      refreshActiveMatrixPopover();
+    });
+    npWrap.appendChild(reactBtn);
+    tooltip.appendChild(npWrap);
   } else {
-    const statusChipClass = summary.visualState === 'incomplete'
-      ? 'bg-amber-50 text-amber-800 border border-amber-200'
-      : summary.visualState === 'complete_ng'
-        ? 'bg-rose-50 text-rose-700 border border-rose-200'
-        : 'bg-emerald-50 text-emerald-700 border border-emerald-200';
-    const statusChipText = summary.visualState === 'incomplete'
-      ? `Incompleta (${summary.doneCount}/${summary.applicableTotal})`
-      : summary.visualState === 'complete_ng'
-        ? `Completa · ${ngCount} NG`
-        : 'Completa OK';
+    const body = document.createElement('div');
+    body.className = 'mt-2.5 space-y-1.5';
 
-    contentHtml += `
-      <div class="mt-2.5 space-y-1.5">
-        <div class="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-          <span>Estado del día (${count} ${count === 1 ? 'control' : 'controles'})</span>
-          <span class="px-2 py-0.5 rounded-full ${statusChipClass} font-black text-[9.5px]">${statusChipText}</span>
-        </div>
+    const statusChipClass = !summary.hasActivity
+      ? 'bg-slate-100 text-slate-600 border border-slate-200'
+      : summary.visualState === 'incomplete'
+        ? 'bg-amber-50 text-amber-800 border border-amber-200'
+        : summary.visualState === 'complete_ng'
+          ? 'bg-rose-50 text-rose-700 border border-rose-200'
+          : 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+    const statusChipText = !summary.hasActivity
+      ? '0 auditados'
+      : summary.visualState === 'incomplete'
+        ? `Incompleta (${summary.doneCount}/${summary.applicableTotal})`
+        : summary.visualState === 'complete_ng'
+          ? `Completa · ${ngCount} NG`
+          : 'Completa OK';
+
+    const topRow = document.createElement('div');
+    topRow.className = 'flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1';
+    topRow.innerHTML = `
+      <span>Controles (${count})</span>
+      <span class="px-2 py-0.5 rounded-full ${statusChipClass} font-black text-[9.5px]">${statusChipText}</span>
     `;
+    body.appendChild(topRow);
 
     summary.itemStatuses.forEach(item => {
-      const badgeCls = item.done
-        ? (item.formNgCount > 0 ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-emerald-100 text-emerald-800 border border-emerald-300')
-        : item.isNa
-          ? 'bg-slate-100 text-slate-700 border border-slate-300'
-          : 'bg-amber-100 text-amber-900 border border-amber-300';
-      const badgeTxt = item.done
-        ? (item.formNgCount > 0 ? `${item.formNgCount} NG` : 'OK ✓')
-        : item.isNa
-          ? 'No aplica'
-          : (item.allowNotApplicable ? 'Falta / N/A' : 'Falta');
-      contentHtml += `
-        <div class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg bg-slate-50/80 border border-slate-100">
-          <div class="flex items-center gap-1.5 min-w-0">
-            <span class="text-xs shrink-0">${item.icon}</span>
-            <span class="font-semibold text-slate-800 text-[11px] truncate">${escapeAuditReportText(item.label)}</span>
-          </div>
-          <span class="shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-bold ${badgeCls}">${badgeTxt}</span>
-        </div>
-      `;
-    });
-
-    if (summary.visualState === 'incomplete') {
-      contentHtml += `<p class="text-[10px] text-amber-700 pt-1 font-medium">Hacé clic en la celda para marcar "No aplica" en los opcionales que no correspondan.</p>`;
-    }
-
-    contentHtml += `</div>`;
-  }
-
-  tooltip.innerHTML = contentHtml;
-
-  // Cálculo de posición precisa
-  const rect = targetElement.getBoundingClientRect();
-  const tooltipWidth = 320;
-  let left = rect.left + (rect.width / 2) - (tooltipWidth / 2);
-  if (left < 12) left = 12;
-  if (left + tooltipWidth > window.innerWidth - 12) left = window.innerWidth - tooltipWidth - 12;
-
-  const placeAbove = rect.top > 280;
-  tooltip.style.left = `${left}px`;
-  if (placeAbove) {
-    tooltip.style.top = 'auto';
-    tooltip.style.bottom = `${window.innerHeight - rect.top + 10}px`;
-  } else {
-    tooltip.style.bottom = 'auto';
-    tooltip.style.top = `${rect.bottom + 10}px`;
-  }
-
-  tooltip.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-1');
-  tooltip.classList.add('opacity-100', 'translate-y-0');
-}
-
-function hideMatrixHoverTooltip() {
-  const tooltip = document.getElementById('matrixHoverTooltip');
-  if (tooltip) {
-    tooltip.classList.remove('opacity-100', 'translate-y-0');
-    tooltip.classList.add('opacity-0', 'pointer-events-none', 'translate-y-1');
-  }
-}
-
-window.closeDailyAuditCellModal = function() {
-  isDailyAuditDetailsOpen = false;
-  pendingLineDisable = null;
-  const modal = document.getElementById('dailyAuditCellModal');
-  if (modal) modal.classList.add('hidden');
-};
-
-function renderDailyAuditDetails(line, date, isFuture) {
-  const details = document.getElementById('dailyAuditCellModalBody');
-  const modalTitle = document.getElementById('dailyAuditCellModalTitle');
-  const modalSubtitle = document.getElementById('dailyAuditCellModalSubtitle');
-  const modalStatusPill = document.getElementById('dailyAuditCellModalStatusPill');
-  if (!details) return;
-  details.replaceChildren();
-
-  const dateLabel = new Intl.DateTimeFormat('es-AR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric'
-  }).format(date);
-
-  const dateKey = getLocalDateKey(date);
-  const productionStatus = getLineProductionStatus(line.lineCode, dateKey);
-  const isPendingLineDisable = pendingLineDisable?.lineCode === line.lineCode && pendingLineDisable.dateKey === dateKey;
-
-  if (modalTitle) modalTitle.textContent = line.lineCode;
-  if (modalSubtitle) modalSubtitle.textContent = `${dateLabel} (${dateKey})`;
-  if (modalStatusPill) {
-    modalStatusPill.className = `inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${
-      productionStatus || isPendingLineDisable
-        ? 'border-slate-200 bg-slate-100 text-slate-600'
-        : isFuture
-          ? 'border-slate-200 bg-slate-50 text-slate-400'
-          : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-    }`;
-    modalStatusPill.textContent = isFuture
-      ? 'Fecha futura'
-      : isPendingLineDisable
-        ? 'Confirmar sin producción'
-        : productionStatus
-          ? 'Sin producción'
-          : 'Línea Activa';
-  }
-
-  // Consulta de auditorías reales de las bases de datos y evaluación por reglas de línea
-  const lineDayRecords = getDailyAuditRecordsForLine(line.lineCode, dateKey);
-  const daySummary = evaluateDailyLineAuditStatus(line.lineCode, dateKey, lineDayRecords, isFuture, productionStatus);
-
-  if (!isFuture && !productionStatus && daySummary.itemStatuses.length > 0) {
-    const checklistCard = document.createElement('div');
-    checklistCard.className = 'rounded-xl border border-slate-200 bg-white p-4 shadow-2xs';
-
-    const checklistHead = document.createElement('div');
-    checklistHead.className = 'flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-100';
-    const badgeColor = daySummary.isComplete
-      ? (daySummary.ngCount > 0 ? 'bg-rose-100 text-rose-800 border-rose-200' : 'bg-emerald-100 text-emerald-800 border-emerald-200')
-      : 'bg-amber-100 text-amber-900 border-amber-300';
-    const badgeText = daySummary.isComplete
-      ? (daySummary.ngCount > 0 ? `Completa · ${daySummary.ngCount} con NG` : 'Auditoría de línea completa ✓')
-      : `Incompleta · Falta${daySummary.missingCount > 1 ? 'n' : ''} ${daySummary.missingCount}`;
-    checklistHead.innerHTML = `
-      <div>
-        <span class="text-xs font-extrabold text-slate-900">Formularios requeridos en ${escapeAuditReportText(line.lineCode)}</span>
-        <p class="text-[10.5px] text-slate-500">Activá el switch <strong>No aplica</strong> si algún formulario condicional no correspondió en esta jornada.</p>
-      </div>
-      <span class="px-2.5 py-1 rounded-full border text-[10px] font-extrabold ${badgeColor}">${badgeText}</span>
-    `;
-    checklistCard.appendChild(checklistHead);
-
-    const grid = document.createElement('div');
-    grid.className = 'grid grid-cols-1 sm:grid-cols-2 gap-2';
-
-    daySummary.itemStatuses.forEach(item => {
       const row = document.createElement('div');
-      const rowStyle = item.done
-        ? (item.formNgCount > 0 ? 'border-rose-200 bg-rose-50/50' : 'border-emerald-200 bg-emerald-50/40')
+      const rowBg = item.done
+        ? (item.formNgCount > 0 ? 'bg-rose-50/70 border-rose-200/80' : 'bg-emerald-50/40 border-emerald-200/70')
         : item.isNa
-          ? 'border-slate-200 bg-slate-50'
-          : 'border-amber-200 bg-amber-50/50';
-      row.className = `flex items-center justify-between gap-2.5 rounded-xl border px-3 py-2 ${rowStyle}`;
+          ? 'bg-slate-50 border-slate-200'
+          : 'bg-slate-50/90 border-slate-200/70';
+      row.className = `flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl border ${rowBg}`;
 
       const left = document.createElement('div');
-      left.className = 'flex items-center gap-2 min-w-0';
-      const ic = document.createElement('span');
-      ic.className = 'text-sm shrink-0';
-      ic.textContent = item.icon;
-      const txtWrap = document.createElement('div');
-      txtWrap.className = 'min-w-0';
-      const lbl = document.createElement('div');
-      lbl.className = 'text-xs font-bold text-slate-800 truncate';
-      lbl.textContent = item.label;
-      const sub = document.createElement('div');
-      sub.className = 'text-[10px] text-slate-500 truncate';
-      sub.textContent = item.done
-        ? `${item.count} registro${item.count > 1 ? 's' : ''} cargado${item.count > 1 ? 's' : ''}${item.formNgCount > 0 ? ` · ${item.formNgCount} NG` : ' · Conforme'}`
-        : item.isNa
-          ? `Marcado N/A${item.naEntry?.markedBy ? ` por ${item.naEntry.markedBy}` : ''}`
-          : (item.allowNotApplicable ? (item.naHint || 'Pendiente o No aplica') : 'Obligatorio · Sin registrar aún');
-      txtWrap.append(lbl, sub);
-      left.append(ic, txtWrap);
-
-      const right = document.createElement('div');
-      right.className = 'shrink-0 flex items-center gap-2';
+      left.className = 'flex items-center gap-1.5 min-w-0';
+      left.innerHTML = `<span class="text-xs shrink-0">${item.icon}</span><span class="font-semibold text-slate-800 text-[11px] truncate">${escapeAuditReportText(item.label)}</span>`;
+      row.appendChild(left);
 
       if (item.done) {
-        const donePill = document.createElement('span');
-        donePill.className = `px-2 py-0.5 rounded-full text-[10px] font-bold ${item.formNgCount > 0 ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-emerald-100 text-emerald-800 border border-emerald-300'}`;
-        donePill.textContent = item.formNgCount > 0 ? `${item.formNgCount} NG` : 'Hecho ✓';
-        right.appendChild(donePill);
+        const doneBtn = document.createElement('button');
+        doneBtn.type = 'button';
+        doneBtn.className = `shrink-0 px-2 py-0.5 rounded-full text-[9.5px] font-extrabold transition cursor-pointer ${
+          item.formNgCount > 0
+            ? 'bg-rose-100 text-rose-800 border border-rose-300 hover:bg-rose-200'
+            : 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200'
+        }`;
+        doneBtn.title = 'Clic para ver detalle / ítems NG';
+        doneBtn.textContent = item.formNgCount > 0 ? `${item.formNgCount} NG →` : 'OK ✓';
+        doneBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const firstRec = item.records[0];
+          hideMatrixHoverTooltip(true);
+          window.openAuditHistoryDetailModal({
+            dateKey,
+            lineNorm: normalizeAuditReportLine(firstRec?.line || line.lineCode),
+            formKey: firstRec?.formKey || item.key
+          });
+        });
+        row.appendChild(doneBtn);
       } else if (item.allowNotApplicable) {
-        const swLabel = document.createElement('label');
-        swLabel.className = 'inline-flex items-center gap-1.5 cursor-pointer select-none';
-        const swText = document.createElement('span');
-        swText.className = `text-[10px] font-bold ${item.isNa ? 'text-slate-700' : 'text-amber-800'}`;
-        swText.textContent = 'No aplica';
+        const swWrap = document.createElement('div');
+        swWrap.className = 'shrink-0 inline-flex items-center gap-1.5';
+
+        const swLbl = document.createElement('span');
+        swLbl.className = `text-[9.5px] font-bold ${item.isNa ? 'text-emerald-700' : 'text-slate-500'}`;
+        swLbl.textContent = 'No aplica';
 
         const swBtn = document.createElement('button');
         swBtn.type = 'button';
         swBtn.setAttribute('role', 'switch');
         swBtn.setAttribute('aria-checked', item.isNa ? 'true' : 'false');
-        swBtn.setAttribute('aria-label', `Marcar ${item.label} como No aplica en ${line.lineCode}`);
-        swBtn.className = `relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+        swBtn.setAttribute('aria-label', `No aplica ${item.label}`);
+        swBtn.className = `relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
           item.isNa ? 'bg-emerald-500' : 'bg-slate-300 hover:bg-slate-400'
         }`;
         const swKnob = document.createElement('span');
-        swKnob.className = `inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-xs transition-transform ${
-          item.isNa ? 'translate-x-4' : 'translate-x-1'
+        swKnob.className = `inline-block h-3 w-3 transform rounded-full bg-white shadow-xs transition-transform ${
+          item.isNa ? 'translate-x-3.5' : 'translate-x-0.5'
         }`;
         swBtn.appendChild(swKnob);
-        swBtn.addEventListener('click', () => {
+        swBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          activeMatrixPopover.pinned = true;
           window.toggleAuditNotApplicable(line.lineCode, dateKey, item.key, !item.isNa);
         });
 
-        swLabel.append(swText, swBtn);
-        right.appendChild(swLabel);
+        swWrap.append(swLbl, swBtn);
+        row.appendChild(swWrap);
       } else {
-        const reqPill = document.createElement('span');
-        reqPill.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300';
-        reqPill.textContent = 'Falta';
-        right.appendChild(reqPill);
+        const reqBadge = document.createElement('span');
+        reqBadge.className = 'shrink-0 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300';
+        reqBadge.textContent = 'Falta';
+        row.appendChild(reqBadge);
       }
 
-      row.append(left, right);
-      grid.appendChild(row);
+      body.appendChild(row);
     });
 
-    checklistCard.appendChild(grid);
-    details.appendChild(checklistCard);
-  }
-
-  const auditListContainer = document.createElement('div');
-  auditListContainer.className = 'mt-3 space-y-2';
-
-  if (lineDayRecords.length > 0) {
-    const listSummary = document.createElement('div');
-    listSummary.className = 'flex items-center justify-between text-xs text-slate-600 pb-1';
-    listSummary.innerHTML = `<span class="font-bold text-slate-800">Auditorías registradas en BBDD: <span class="text-emerald-700 font-extrabold">${lineDayRecords.length} formularios</span></span><span class="text-[11px] text-slate-500 font-mono">Fecha: ${dateKey}</span>`;
-    auditListContainer.appendChild(listSummary);
-
-    lineDayRecords.forEach(r => {
-      const formCard = document.createElement('button');
-      formCard.type = 'button';
-      const isNg = isAuditRecordNonConforming(r);
-      const ngTotal = Array.isArray(r.ngItems) ? r.ngItems.length : 0;
-      formCard.className = `w-full text-left flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl border transition cursor-pointer ${
-        isNg
-          ? 'bg-rose-50/70 border-rose-200 hover:bg-rose-100/70 hover:border-rose-300 shadow-2xs'
-          : 'bg-white border-slate-200 hover:border-red-300 hover:bg-slate-50/80 shadow-2xs'
-      }`;
-      formCard.title = 'Clic para ver qué auditó el auditor y los ítems NG';
-      formCard.addEventListener('click', () => {
-        window.openAuditHistoryDetailModal({
-          recordId: r.id,
-          dateKey,
-          lineNorm: normalizeAuditReportLine(r.line || line.lineCode),
-          formKey: r.formKey
-        });
+    // Pie compacto de la tarjeta pequeña: ver registros completos o marcar Sin Producción
+    const isPendingDisable = pendingLineDisable?.lineCode === line.lineCode && pendingLineDisable.dateKey === dateKey;
+    if (isPendingDisable) {
+      const npForm = document.createElement('form');
+      npForm.className = 'pt-2 mt-2 border-t border-slate-100 space-y-1.5';
+      const npInput = document.createElement('input');
+      npInput.type = 'text';
+      npInput.required = true;
+      npInput.maxLength = 140;
+      npInput.placeholder = 'Motivo sin producción...';
+      npInput.className = 'w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-[11px] text-slate-800 focus:border-red-500 focus:outline-none';
+      const npBtns = document.createElement('div');
+      npBtns.className = 'flex justify-end gap-1.5';
+      const npCancel = document.createElement('button');
+      npCancel.type = 'button';
+      npCancel.className = 'rounded-md border border-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-50 cursor-pointer';
+      npCancel.textContent = 'Cancelar';
+      npCancel.addEventListener('click', (e) => {
+        e.stopPropagation();
+        pendingLineDisable = null;
+        refreshActiveMatrixPopover();
       });
+      const npSave = document.createElement('button');
+      npSave.type = 'submit';
+      npSave.className = 'rounded-md bg-red-600 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-red-700 cursor-pointer';
+      npSave.textContent = 'Confirmar';
+      npForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setLineProductionStatus(line, date, false, npInput.value);
+        refreshActiveMatrixPopover();
+      });
+      npBtns.append(npCancel, npSave);
+      npForm.append(npInput, npBtns);
+      body.appendChild(npForm);
+    } else {
+      const footer = document.createElement('div');
+      footer.className = 'pt-2 mt-1.5 border-t border-slate-100 flex items-center justify-between gap-2 text-[10px]';
 
-      const leftCol = document.createElement('div');
-      leftCol.className = 'flex items-center gap-2.5 min-w-0';
-      const icon = document.createElement('span');
-      icon.className = 'w-8 h-8 shrink-0 rounded-lg bg-slate-100 flex items-center justify-center text-sm';
-      icon.textContent = r.formKey === 'esd' ? '⚡' : r.formKey === 'torque' ? '🔩' : r.formKey === 'inicio_turno' ? '📋' : r.formKey === 'cambio_modelo' ? '🔄' : '🏭';
-
-      const info = document.createElement('div');
-      info.className = 'min-w-0';
-      const name = document.createElement('div');
-      name.className = 'font-bold text-xs text-slate-800 truncate';
-      name.textContent = r.formName || r.formKey;
-
-      const meta = document.createElement('div');
-      meta.className = 'text-[11px] text-slate-500 truncate';
-      meta.textContent = `Auditor: ${r.auditor || 'Sin auditor'} · Turno: ${r.turno || '1'} · ${r.model ? `Modelo: ${r.model}` : (r.source || 'BBDD')}`;
-
-      info.append(name, meta);
-      leftCol.append(icon, info);
-
-      const statusBadge = document.createElement('span');
-      statusBadge.className = `shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${
-        isNg ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-      }`;
-      statusBadge.textContent = isNg
-        ? `Desvío NG${ngTotal ? ` (${ngTotal})` : ''} · Ver detalle →`
-        : 'Conforme · Ver detalle →';
-
-      formCard.append(leftCol, statusBadge);
-      auditListContainer.appendChild(formCard);
-    });
-  } else if (!isFuture && !productionStatus) {
-    const emptyNotice = document.createElement('div');
-    emptyNotice.className = 'p-4 rounded-xl border border-dashed border-slate-200 bg-white text-center text-xs text-slate-500';
-    emptyNotice.textContent = 'No se registran formularios cargados en las bases de datos para esta línea en esta fecha.';
-    auditListContainer.appendChild(emptyNotice);
-  }
-
-  details.appendChild(auditListContainer);
-
-  if (productionStatus) {
-    const reason = document.createElement('p');
-    reason.className = 'mt-3 text-[11px] text-slate-600 bg-slate-100 p-2.5 rounded-lg border border-slate-200';
-    reason.textContent = `Motivo sin producción: ${productionStatus.reason} · Registrado por: ${productionStatus.registeredBy || 'Usuario'}`;
-    details.appendChild(reason);
-  }
-
-  if (!isFuture && !isPendingLineDisable) {
-    const productionAction = document.createElement('div');
-    productionAction.className = 'mt-4 flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between sm:px-4';
-    const actionCopy = document.createElement('div');
-    const actionTitle = document.createElement('p');
-    actionTitle.className = 'text-xs font-bold text-slate-800';
-    actionTitle.textContent = productionStatus ? '¿La línea volvió a producir?' : '¿La línea no produjo en esta fecha?';
-    const actionHint = document.createElement('p');
-    actionHint.className = 'mt-0.5 text-[10px] text-slate-500';
-    actionHint.textContent = productionStatus
-      ? 'Al reactivarla, se reanuda el registro de actividad.'
-      : 'Marcá la jornada como sin producción si no hubo operaciones.';
-    actionCopy.append(actionTitle, actionHint);
-
-    const productionButton = document.createElement('button');
-    productionButton.type = 'button';
-    productionButton.className = productionStatus
-      ? 'inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-700 transition-colors hover:bg-emerald-100'
-      : 'inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-100';
-    productionButton.textContent = productionStatus ? 'Reactivar producción' : 'Marcar sin producción';
-    productionButton.addEventListener('click', () => {
-      if (productionStatus) {
-        setLineProductionStatus(line, date, true);
+      if (count > 0) {
+        const viewBtn = document.createElement('button');
+        viewBtn.type = 'button';
+        viewBtn.className = 'font-bold text-red-600 hover:text-red-700 cursor-pointer';
+        viewBtn.textContent = `Ver ${count} auditoría${count > 1 ? 's' : ''} →`;
+        viewBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const firstNgOrRec = lineDayRecords.find(r => isAuditRecordNonConforming(r)) || lineDayRecords[0];
+          hideMatrixHoverTooltip(true);
+          window.openAuditHistoryDetailModal({
+            dateKey,
+            lineNorm: normalizeAuditReportLine(firstNgOrRec?.line || line.lineCode),
+            formKey: firstNgOrRec?.formKey
+          });
+        });
+        footer.appendChild(viewBtn);
       } else {
-        pendingLineDisable = { lineCode: line.lineCode, dateKey };
-        renderDailyAuditDetails(line, date, isFuture);
+        const hint = document.createElement('span');
+        hint.className = 'text-slate-400';
+        hint.textContent = isPinned ? 'Guardado automático' : 'Clic para fijar tarjeta';
+        footer.appendChild(hint);
       }
-    });
-    productionAction.append(actionCopy, productionButton);
-    details.appendChild(productionAction);
-  } else if (isPendingLineDisable) {
-    const reasonForm = document.createElement('form');
-    reasonForm.className = 'mt-3 rounded-xl border border-amber-200 bg-amber-50/50 p-3 space-y-2';
-    const label = document.createElement('label');
-    label.className = 'block text-xs font-bold text-amber-900';
-    label.textContent = 'Indicá el motivo para marcar la jornada como sin producción:';
-    const reasonInput = document.createElement('input');
-    reasonInput.type = 'text';
-    reasonInput.required = true;
-    reasonInput.maxLength = 180;
-    reasonInput.placeholder = 'Motivo (ej: Sin plan de producción / Mantenimiento)';
-    reasonInput.className = 'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 focus:border-red-500 focus:outline-none';
-    const formActions = document.createElement('div');
-    formActions.className = 'flex justify-end gap-2 pt-1';
-    const cancelButton = document.createElement('button');
-    cancelButton.type = 'button';
-    cancelButton.className = 'rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50';
-    cancelButton.textContent = 'Cancelar';
-    cancelButton.addEventListener('click', () => {
-      pendingLineDisable = null;
-      renderDailyAuditDetails(line, date, isFuture);
-    });
-    const saveButton = document.createElement('button');
-    saveButton.type = 'submit';
-    saveButton.className = 'rounded-lg bg-red-600 px-3.5 py-1.5 text-[11px] font-bold text-white hover:bg-red-700';
-    saveButton.textContent = 'Confirmar';
-    reasonForm.addEventListener('submit', event => {
-      event.preventDefault();
-      setLineProductionStatus(line, date, false, reasonInput.value);
-    });
-    formActions.append(cancelButton, saveButton);
-    reasonForm.append(label, reasonInput, formActions);
-    details.appendChild(reasonForm);
+
+      const npTrigger = document.createElement('button');
+      npTrigger.type = 'button';
+      npTrigger.className = 'font-semibold text-slate-500 hover:text-slate-800 cursor-pointer';
+      npTrigger.textContent = 'Sin prod.';
+      npTrigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        activeMatrixPopover.pinned = true;
+        pendingLineDisable = { lineCode: line.lineCode, dateKey };
+        refreshActiveMatrixPopover();
+      });
+      footer.appendChild(npTrigger);
+      body.appendChild(footer);
+    }
+
+    tooltip.appendChild(body);
+  }
+
+  positionMatrixPopover(tooltip, targetElement);
+  tooltip.classList.remove('opacity-0', 'translate-y-1', 'pointer-events-none');
+  tooltip.classList.add('opacity-100', 'translate-y-0', 'pointer-events-auto');
+}
+
+function hideMatrixHoverTooltip(force = false) {
+  if (!force && activeMatrixPopover && activeMatrixPopover.pinned) return;
+  if (matrixTooltipHideTimer) {
+    clearTimeout(matrixTooltipHideTimer);
+    matrixTooltipHideTimer = null;
+  }
+  const doHide = () => {
+    if (!force && activeMatrixPopover && activeMatrixPopover.pinned) return;
+    activeMatrixPopover = null;
+    pendingLineDisable = null;
+    const tooltip = document.getElementById('matrixHoverTooltip');
+    if (tooltip) {
+      tooltip.classList.remove('opacity-100', 'translate-y-0', 'pointer-events-auto');
+      tooltip.classList.add('opacity-0', 'pointer-events-none', 'translate-y-1');
+    }
+  };
+  if (force) {
+    doHide();
+  } else {
+    matrixTooltipHideTimer = setTimeout(doHide, 160);
   }
 }
+
+window.closeDailyAuditCellModal = function() {
+  hideMatrixHoverTooltip(true);
+};
 
 function renderDashboardOverview() {
   const matrixHead = document.getElementById('dashboardWeeklyAuditHead');
@@ -7459,6 +7407,9 @@ function renderDashboardOverview() {
       button.className = `mx-auto flex min-h-12 w-full flex-col items-center justify-center rounded-lg border px-1 py-1.5 transition-all ${cellStateClass}${isSelected ? ' ring-2 ring-rose-500 ring-offset-1' : ''}`;
       button.disabled = isFuture;
       button.setAttribute('aria-label', `${line.lineCode}, ${dateKey}: ${count} formularios auditados`);
+      button.dataset.matrixCell = '1';
+      button.dataset.lineCode = line.lineCode;
+      button.dataset.dateKey = dateKey;
       button.removeAttribute('title');
 
       const countText = document.createElement('span');
@@ -7496,20 +7447,20 @@ function renderDashboardOverview() {
         button.appendChild(subMeta);
       }
 
-      // Popover minimalista flotante al pasar el mouse (hover)
+      // Tarjeta pequeña interactiva al pasar el mouse o hacer clic
       button.addEventListener('mouseenter', () => {
-        showMatrixHoverTooltip(button, line, date, isFuture, productionStatus, lineDayRecords);
+        showMatrixHoverTooltip(button, line, date, isFuture, productionStatus, lineDayRecords, false);
       });
       button.addEventListener('mouseleave', () => {
-        hideMatrixHoverTooltip();
+        hideMatrixHoverTooltip(false);
       });
 
       if (!isFuture) {
-        button.addEventListener('click', () => {
+        button.addEventListener('click', (e) => {
+          e.stopPropagation();
           pendingLineDisable = null;
           selectedDailyAuditCell = { lineCode: line.lineCode, dateKey };
-          isDailyAuditDetailsOpen = true;
-          renderDashboardOverview();
+          showMatrixHoverTooltip(button, line, date, isFuture, productionStatus, lineDayRecords, true);
         });
       }
       cell.appendChild(button);
@@ -7520,18 +7471,6 @@ function renderDashboardOverview() {
 
   const inlineDetails = document.getElementById('dashboardAuditDayDetails');
   if (inlineDetails) inlineDetails.classList.add('hidden');
-
-  const cellModal = document.getElementById('dailyAuditCellModal');
-  if (initialSelection && isDailyAuditDetailsOpen && cellModal) {
-    selectedDailyAuditCell = {
-      lineCode: initialSelection.line.lineCode,
-      dateKey: getLocalDateKey(initialSelection.date)
-    };
-    renderDailyAuditDetails(initialSelection.line, initialSelection.date, initialSelection.isFuture);
-    cellModal.classList.remove('hidden');
-  } else if (cellModal) {
-    cellModal.classList.add('hidden');
-  }
 }
 
 function initModals() {
@@ -10014,9 +9953,8 @@ document.addEventListener('keydown', (e) => {
       window.closeAuditFormDetailModal();
       return;
     }
-    const cellModal = document.getElementById('dailyAuditCellModal');
-    if (cellModal && !cellModal.classList.contains('hidden')) {
-      window.closeDailyAuditCellModal();
+    if (activeMatrixPopover) {
+      hideMatrixHoverTooltip(true);
     }
   }
 });
