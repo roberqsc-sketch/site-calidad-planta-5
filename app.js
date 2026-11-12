@@ -7000,11 +7000,9 @@ function showMatrixHoverTooltip(targetElement, line, date, isFuture, productionS
 
   const dotClass = summary.visualState === 'incomplete'
     ? 'bg-amber-400 shadow-xs ring-2 ring-amber-100'
-    : summary.visualState === 'complete_ng'
-      ? 'bg-rose-500 shadow-xs ring-2 ring-rose-100'
-      : summary.visualState === 'complete_ok'
-        ? 'bg-emerald-500 shadow-xs ring-2 ring-emerald-100'
-        : 'bg-slate-300';
+    : (summary.visualState === 'complete_ng' || summary.visualState === 'complete_ok')
+      ? 'bg-emerald-500 shadow-xs ring-2 ring-emerald-100'
+      : 'bg-slate-300';
 
   tooltip.replaceChildren();
 
@@ -7063,9 +7061,7 @@ function showMatrixHoverTooltip(targetElement, line, date, isFuture, productionS
       ? 'bg-slate-100 text-slate-600 border border-slate-200'
       : summary.visualState === 'incomplete'
         ? 'bg-amber-50 text-amber-800 border border-amber-200'
-        : summary.visualState === 'complete_ng'
-          ? 'bg-rose-50 text-rose-700 border border-rose-200'
-          : 'bg-emerald-50 text-emerald-700 border border-emerald-200';
+        : 'bg-emerald-50 text-emerald-700 border border-emerald-200';
     const statusChipText = !summary.hasActivity
       ? '0 auditados'
       : summary.visualState === 'incomplete'
@@ -7396,10 +7392,8 @@ function renderDashboardOverview() {
           ? 'cursor-default border-slate-300 bg-slate-200 text-slate-700'
           : daySummary.visualState === 'incomplete'
             ? 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 shadow-xs'
-            : daySummary.visualState === 'complete_ng'
-              ? 'border-rose-300 bg-rose-50 text-rose-900 hover:bg-rose-100 shadow-xs'
-              : daySummary.visualState === 'complete_ok'
-                ? 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100 shadow-xs'
+            : (daySummary.visualState === 'complete_ng' || daySummary.visualState === 'complete_ok')
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100 shadow-xs'
                 : (dateKey === todayKey
                     ? 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                     : 'border-slate-200 bg-slate-50/80 text-slate-400 hover:bg-slate-100');
@@ -7434,7 +7428,7 @@ function renderDashboardOverview() {
           daySummary.visualState === 'incomplete'
             ? 'bg-amber-200/80 text-amber-950'
             : daySummary.visualState === 'complete_ng'
-              ? 'bg-rose-200/80 text-rose-900'
+              ? 'bg-rose-100 text-rose-800 border border-rose-200'
               : 'bg-emerald-200/70 text-emerald-900'
         }`;
         if (daySummary.visualState === 'incomplete') {
