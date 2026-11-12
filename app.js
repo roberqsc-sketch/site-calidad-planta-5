@@ -619,6 +619,7 @@ function runMockAuthApi(path, options = {}) {
 document.addEventListener('DOMContentLoaded', () => {
   restoreDailyFormRecords();
   loadAuditSheetsData();
+  initAuditSheetsLiveSync();
   restoreLineProductionStatus();
   initAuth();
   initClock();
@@ -5795,6 +5796,8 @@ function applyAuditSheetsDataPayload(data) {
   if (!data || !Array.isArray(data.records)) return;
   const badge = document.getElementById('auditSheetsRecordsBadge');
   const sourcesText = document.getElementById('auditSheetsSourcesText');
+  const prevCount = auditSheetsDataMeta?.counts?.totalAudits || 0;
+  const newCount = data.counts?.totalAudits || data.records.length;
   auditSheetsDataMeta = data;
 
   if (badge) {
@@ -5818,13 +5821,19 @@ function applyAuditSheetsDataPayload(data) {
   if (typeof renderFormRecordsTable === 'function') {
     renderFormRecordsTable(AppState.recentFormRecords);
   }
+
+  // Notificación amigable si se detectaron nuevas auditorías en segundo plano
+  if (prevCount > 0 && newCount > prevCount) {
+    const diff = newCount - prevCount;
+    showToast(`✓ BBDD actualizada en vivo: +${diff} auditoría(s) registrada(s) por el equipo.`);
+  }
 }
 
-window.loadAuditSheetsData = async function(forceRefresh = false) {
+window.loadAuditSheetsData = async function(forceRefresh = false, isBackground = false) {
   const badge = document.getElementById('auditSheetsRecordsBadge');
   const sourcesText = document.getElementById('auditSheetsSourcesText');
 
-  if (!forceRefresh) {
+  if (!forceRefresh && !isBackground) {
     try {
       const cachedRaw = localStorage.getItem(AUDIT_SHEETS_CLIENT_CACHE_KEY);
       if (cachedRaw) {
@@ -5836,7 +5845,9 @@ window.loadAuditSheetsData = async function(forceRefresh = false) {
     } catch (_) {}
   }
 
-  if (badge) badge.textContent = forceRefresh ? 'Actualizando...' : (auditSheetsDataMeta ? 'Sincronizando...' : 'Cargando BBDD...');
+  if (badge && !isBackground) {
+    badge.textContent = forceRefresh ? 'Actualizando...' : (auditSheetsDataMeta ? 'Sincronizando...' : 'Cargando BBDD...');
+  }
 
   try {
     const url = '/api/audits/sheets-data' + (forceRefresh ? '?refresh=1' : '');
@@ -5865,6 +5876,27 @@ window.loadAuditSheetsData = async function(forceRefresh = false) {
 window.refreshAuditSheetsData = function() {
   window.loadAuditSheetsData(true);
 };
+
+function initAuditSheetsLiveSync() {
+  // Sincronización en vivo: consulta en segundo plano cada 15 segundos
+  if (!window._auditSheetsAutoSyncTimer) {
+    window._auditSheetsAutoSyncTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        window.loadAuditSheetsData(false, true);
+      }
+    }, 15000);
+  }
+
+  // Actualizar al instante cuando el usuario vuelve a la pestaña o ventana
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      window.loadAuditSheetsData(false, true);
+    }
+  });
+  window.addEventListener('focus', () => {
+    window.loadAuditSheetsData(false, true);
+  });
+}
 
 window.setAuditMissingFilter = function(filter) {
   auditMissingFilterState = filter;
@@ -9014,6 +9046,7 @@ window.handleTorqueFullscreenSubmit = function(e) {
   AppState.recentFormRecords.unshift(newRecord);
   persistDailyFormRecords();
   renderFormRecordsTable(AppState.recentFormRecords);
+  if (typeof renderDashboardOverview === 'function') renderDashboardOverview();
 
   showToast(`✓ Registro de Control de Torque guardado con éxito (${isAllOk ? '100% Conforme' : 'Con Desvíos Registrados'})`);
   navigateToView('auditorias');
@@ -9059,6 +9092,7 @@ window.handleEsdFullscreenSubmit = function(e) {
   AppState.recentFormRecords.unshift(newRecord);
   persistDailyFormRecords();
   renderFormRecordsTable(AppState.recentFormRecords);
+  if (typeof renderDashboardOverview === 'function') renderDashboardOverview();
 
   showToast(`✓ Registro de Pulseras ESD guardado con éxito (${isAllOk ? 'Conforme' : 'Con Desvíos'})`);
   navigateToView('auditorias');
@@ -9394,6 +9428,7 @@ async function handleFormularioSubmit() {
   // Re-render tabla
   renderFormRecordsTable(AppState.recentFormRecords);
   updateSummaryMetrics();
+  if (typeof renderDashboardOverview === 'function') renderDashboardOverview();
 
   if (formKey === 'im_cambio') navigateToView('auditorias');
   else closeFormularioModal();

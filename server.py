@@ -112,6 +112,7 @@ AUDIT_SHEETS_CONFIG = {
         'active': True
     }
 }
+AUDIT_SHEETS_CACHE_TTL_SECONDS = 15
 AUDIT_SHEETS_CACHE_LOCK = threading.Lock()
 AUDIT_SHEETS_REFRESH_LOCK = threading.Lock()
 AUDIT_SHEETS_REFRESHING = threading.Event()
@@ -1191,6 +1192,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if path == '/api/tv-events':
             self.send_tv_events_data()
             return
+        if path in ('/api/audits/notify', '/api/audits/refresh'):
+            refresh_audit_sheets_snapshot_sync()
+            self.send_json(200, {'success': True, 'message': 'BBDD de auditorías sincronizada'})
+            return
         if path == '/api/audits/sheets-data':
             self.send_audit_sheets_data()
             return
@@ -1451,6 +1456,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if path in ('/api/audits/notify', '/api/audits/refresh', '/api/audits/webhook'):
+            refresh_audit_sheets_snapshot_sync()
+            self.send_json(200, {'success': True, 'message': 'BBDD de auditorías sincronizada'})
+            return
         if path == '/api/audits/not-applicable':
             if not self.require_same_origin():
                 return
@@ -3041,7 +3050,7 @@ def get_audit_sheets_payload(force_refresh=False):
             payload_bytes = AUDIT_SHEETS_CACHE.get('payload_bytes')
             cache_age = time.time() - AUDIT_SHEETS_CACHE['loaded_at']
         if payload_bytes is not None:
-            if cache_age >= SCRAP_SCREENS_CACHE_TTL_SECONDS:
+            if cache_age >= AUDIT_SHEETS_CACHE_TTL_SECONDS:
                 refresh_audit_sheets_in_background()
             return payload_bytes
     return refresh_audit_sheets_snapshot_sync()
@@ -3060,6 +3069,16 @@ def run():
         refresh_scrap_screens_in_background()
         refresh_scrap_scanner_payload_in_background()
         refresh_audit_sheets_in_background()
+
+        def audit_sheets_auto_worker():
+            while True:
+                time.sleep(20)
+                try:
+                    refresh_audit_sheets_snapshot_sync()
+                except Exception as auto_err:
+                    print(f"[AUDIT-AUTO] Error en sincronización periódica: {auto_err}", file=sys.stderr)
+
+        threading.Thread(target=audit_sheets_auto_worker, name='audit-sheets-auto-worker', daemon=True).start()
         url = f"http://localhost:{PORT}"
         print("=" * 60)
         print("[OK] CALIDAD SUITE - PLANTA 5 (PRODUCCION DE TV)")
