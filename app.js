@@ -927,10 +927,14 @@ async function loadScrapScannerData(options = {}) {
       ) ||
       !Number.isInteger(payload.pendingTotal) ||
       !Array.isArray(payload.pendingByMonth) ||
-      payload.pendingByMonth.length !== 12 ||
-      !payload.pendingByMonth.every((item, index) =>
+      payload.pendingByMonth.length < 6 ||
+      !payload.pendingByMonth.every(item =>
         item &&
-        item.month === index + 1 &&
+        validString(item.key) &&
+        Number.isInteger(item.year) &&
+        Number.isInteger(item.month) &&
+        item.month >= 1 &&
+        item.month <= 12 &&
         validString(item.name) &&
         Number.isInteger(item.bbddCount) &&
         Number.isInteger(item.scannedCount) &&
@@ -943,6 +947,7 @@ async function loadScrapScannerData(options = {}) {
       !Array.isArray(payload.pendingRecords) ||
       !payload.pendingRecords.every(record =>
         record &&
+        validString(record.monthKey) &&
         Number.isInteger(record.month) &&
         record.month >= 1 &&
         record.month <= 12 &&
@@ -1097,10 +1102,14 @@ function renderScrapScannerData(payload) {
     });
   }
 
+  if (scrapScannerSelectedMonth && !payload.pendingByMonth.some(item => item.key === scrapScannerSelectedMonth)) {
+    scrapScannerSelectedMonth = null;
+  }
+
   monthlyContainer.replaceChildren();
   payload.pendingByMonth.forEach(item => {
     const button = document.createElement('button');
-    const selected = scrapScannerSelectedMonth === item.month;
+    const selected = scrapScannerSelectedMonth === item.key;
     button.type = 'button';
     button.className = `rounded-lg border px-2 py-2 text-left transition focus:outline-none focus:ring-2 focus:ring-amber-300 ${
       selected ? 'border-amber-300 bg-amber-50' : 'border-slate-100 bg-slate-50 hover:border-amber-200 hover:bg-amber-50/60'
@@ -1109,13 +1118,13 @@ function renderScrapScannerData(payload) {
     button.setAttribute('aria-label', `${item.name}: ${item.pendingCount} pantallas pendientes de traer`);
     const name = document.createElement('span');
     name.className = 'block truncate text-[9px] font-semibold text-slate-500';
-    name.textContent = item.name.slice(0, 3);
+    name.textContent = item.shortName || item.name.slice(0, 3);
     const count = document.createElement('span');
     count.className = `mt-1 block text-sm font-black ${item.pendingCount ? 'text-amber-800' : 'text-slate-400'}`;
     count.textContent = item.pendingCount.toLocaleString('es-AR');
     button.append(name, count);
     button.addEventListener('click', () => {
-      scrapScannerSelectedMonth = selected ? null : item.month;
+      scrapScannerSelectedMonth = selected ? null : item.key;
       renderScrapScannerData(payload);
       document.getElementById('scrapScannerMissingDetails')?.scrollIntoView({
         behavior: 'smooth',
@@ -1126,22 +1135,22 @@ function renderScrapScannerData(payload) {
   });
 
   const selectedMissingRecords = payload.pendingRecords.filter(record =>
-    scrapScannerSelectedMonth === null || record.month === scrapScannerSelectedMonth
+    scrapScannerSelectedMonth === null || record.monthKey === scrapScannerSelectedMonth
   );
   if (monthLabel) {
-    const selectedMonth = payload.pendingByMonth.find(item => item.month === scrapScannerSelectedMonth);
+    const selectedMonth = payload.pendingByMonth.find(item => item.key === scrapScannerSelectedMonth);
     const recordCount = selectedMissingRecords.length.toLocaleString('es-AR');
     monthLabel.textContent = selectedMonth
       ? `${selectedMonth.name} · ${recordCount} pendientes`
-      : `Todos los meses de 2026 · ${recordCount} pendientes`;
+      : `Desde julio 2026 · ${recordCount} pendientes`;
   }
   missingRecords.replaceChildren();
   if (!selectedMissingRecords.length) {
-    appendScrapScannerEmptyRow(missingRecords, 4, 'No hay pantallas pendientes de traer para el período seleccionado.');
+    appendScrapScannerEmptyRow(missingRecords, 4, 'No hay pantallas pendientes de traer desde julio 2026.');
   } else {
     selectedMissingRecords.forEach(record => {
       const row = document.createElement('tr');
-      const monthName = payload.pendingByMonth.find(item => item.month === record.month)?.name || '';
+      const monthName = payload.pendingByMonth.find(item => item.key === record.monthKey)?.name || '';
       row.append(
         createScrapScannerCell(monthName),
         createScrapScannerCell(record.date, 'whitespace-nowrap'),
@@ -1155,7 +1164,7 @@ function renderScrapScannerData(payload) {
   unregisteredCount.textContent = payload.unregisteredScans.length.toLocaleString('es-AR');
   unregisteredRecords.replaceChildren();
   if (!payload.unregisteredScans.length) {
-    appendScrapScannerEmptyRow(unregisteredRecords, 4, 'No hay seriales escaneados fuera de la BBDD de RMA.');
+    appendScrapScannerEmptyRow(unregisteredRecords, 4, 'No hay seriales escaneados desde julio 2026 fuera de la BBDD de RMA.');
   } else {
     payload.unregisteredScans.forEach(record => {
       const row = document.createElement('tr');

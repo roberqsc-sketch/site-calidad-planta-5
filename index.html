@@ -2729,19 +2729,19 @@
           </section>
           <section class="min-w-0 rounded-xl border border-slate-200 p-3 sm:p-4" aria-labelledby="scrapScannerMonthlyTitle">
             <div class="mb-3 flex items-center justify-between gap-2">
-              <h4 id="scrapScannerMonthlyTitle" class="text-xs font-bold text-slate-900">Pendientes de traer por mes · 2026</h4>
+              <h4 id="scrapScannerMonthlyTitle" class="text-xs font-bold text-slate-900">Pendientes de traer por mes · Desde julio 2026</h4>
               <div class="flex items-center gap-1">
                 <span class="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-800">Total: <span id="scrapScannerPendingTotalCount">—</span></span>
                 <button id="scrapScannerShowAllMonths" type="button" class="rounded-md px-2 py-1 text-[10px] font-semibold text-violet-700 hover:bg-violet-50">Ver todos</button>
               </div>
             </div>
-            <div id="scrapScannerMissingMonths" class="grid grid-cols-3 gap-2 sm:grid-cols-4 xl:grid-cols-3" aria-label="Pantallas de BBDD sin escaneo coincidente por mes"></div>
+            <div id="scrapScannerMissingMonths" class="grid grid-cols-3 gap-2" aria-label="Pantallas de BBDD sin escaneo coincidente por mes desde julio 2026"></div>
           </section>
         </div>
         <section id="scrapScannerMissingDetails" class="rounded-xl border border-slate-200 p-3 sm:p-4" aria-labelledby="scrapScannerMissingDetailsTitle">
           <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h4 id="scrapScannerMissingDetailsTitle" class="text-xs font-bold text-slate-900">Pantallas que faltan traer</h4>
-            <p id="scrapScannerMissingMonthLabel" class="text-[10px] text-slate-500">Todos los meses de 2026</p>
+            <p id="scrapScannerMissingMonthLabel" class="text-[10px] text-slate-500">Desde julio 2026</p>
           </div>
           <div class="max-h-64 overflow-auto rounded-lg border border-slate-100">
             <table class="w-full min-w-[440px] text-left text-[10px]">
@@ -2779,7 +2779,7 @@
             <h4 id="scrapScannerUnregisteredTitle" class="text-xs font-bold text-slate-900">Escaneadas pero no encontradas en RMA</h4>
             <span id="scrapScannerUnregisteredCount" class="rounded-full bg-rose-100 px-2.5 py-1 text-[10px] font-bold text-rose-800">0</span>
           </div>
-          <p class="mb-3 text-[10px] text-slate-500">Si el serial aún no figura en BBDD, el modelo posible se toma de SCANER; verificá antes de registrar la baja.</p>
+          <p class="mb-3 text-[10px] text-slate-500">Escaneos desde julio 2026 sin coincidencia en BBDD; si el serial aún no figura, el modelo posible se toma de SCANER.</p>
           <div class="max-h-56 overflow-auto rounded-lg border border-rose-100 bg-white">
             <table class="w-full min-w-[460px] text-left text-[10px]">
               <thead class="sticky top-0 bg-slate-50 text-slate-500">
@@ -2864,7 +2864,7 @@
   </div>
 
   <!-- Scripts -->
-  <script src="app.js?v=20261111-complete-always-green"></script>
+  <script src="app.js?v=20261111-scanner-july2026"></script>
 
   <!-- MODAL: VISOR CARRUSEL DE FOTOS DE EVENTOS TV -->
   <div id="tvPhotoCarouselModal" class="fixed inset-0 z-[100] hidden items-center justify-center bg-slate-950/85 p-3 sm:p-6 backdrop-blur-sm" onclick="if(event.target===this) window.closeTvPhotoCarousel()">

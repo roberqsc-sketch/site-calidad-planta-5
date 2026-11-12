@@ -151,6 +151,9 @@ SCRAP_SCANNER_PAYLOAD_CACHE = {
     'refresh_error': ''
 }
 SCRAP_SCANNER_FIRST_DATA_ROW = 3669
+SCRAP_SCANNER_START_YEAR = 2026
+SCRAP_SCANNER_START_MONTH = 7
+SCRAP_SCANNER_START_DATE = datetime.datetime(SCRAP_SCANNER_START_YEAR, SCRAP_SCANNER_START_MONTH, 1)
 SCRAP_SCREENS_ARCHIVE_DB_PATH = os.environ.get(
     'SCRAP_SCREENS_ARCHIVE_DB',
     os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scrap_screens_archive.sqlite3')
@@ -489,7 +492,7 @@ def load_scrap_scanner_records(force_refresh=False):
                 not values[3].strip() or
                 values[3].strip().casefold() == 's' or
                 not scanned_at or
-                scanned_at.year != 2026
+                scanned_at.year < SCRAP_SCANNER_START_YEAR
             ):
                 continue
             records.append({
@@ -533,16 +536,16 @@ def build_scrap_scanner_payload(records, bbdd_records, today=None):
                 'location': location,
                 '_scannedAt': scanned_at
             }
-        if scanned_at.year == 2026:
-            scanned_serials_by_month[scanned_at.month].add(serial_key)
-            if scanned_at.date() == current_date:
-                scanned_today_by_serial[serial_key] = {
-                    'serial': record['serial'],
-                    'model': record['model'],
-                    'op': record.get('op', '').strip(),
-                    'lpn': record['lpn'],
-                    'scannedAt': scanned_at.strftime('%H:%M:%S')
-                }
+        if scanned_at >= SCRAP_SCANNER_START_DATE and scanned_at.year <= max(SCRAP_SCANNER_START_YEAR, current_date.year):
+            scanned_serials_by_month[(scanned_at.year, scanned_at.month)].add(serial_key)
+        if scanned_at.date() == current_date:
+            scanned_today_by_serial[serial_key] = {
+                'serial': record['serial'],
+                'model': record['model'],
+                'op': record.get('op', '').strip(),
+                'lpn': record['lpn'],
+                'scannedAt': scanned_at.strftime('%H:%M:%S')
+            }
 
     month_names = (
         'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -567,12 +570,12 @@ def build_scrap_scanner_payload(records, bbdd_records, today=None):
             bbdd_match['model'] = str(record.get('model', '')).strip()
         if not bbdd_match['op']:
             bbdd_match['op'] = str(record.get('op', '')).strip()
-        if record.get('year') != 2026:
+        if record.get('year') is not None and record.get('year') < SCRAP_SCANNER_START_YEAR:
             continue
         disposed_at = parse_scanner_sheet_datetime(record.get('disposedAt', ''))
-        if not disposed_at or disposed_at.year != 2026:
+        if not disposed_at or disposed_at < SCRAP_SCANNER_START_DATE:
             continue
-        month_records = bbdd_by_month[disposed_at.month]
+        month_records = bbdd_by_month[(disposed_at.year, disposed_at.month)]
         if serial_key in month_records:
             continue
         month_records[serial_key] = {
@@ -594,32 +597,50 @@ def build_scrap_scanner_payload(records, bbdd_records, today=None):
     for candidate in bbdd_model_candidates:
         if candidate['serialKey']:
             bbdd_models_by_prefix[candidate['serialKey'][:4]].append(candidate)
+    max_year = max(SCRAP_SCANNER_START_YEAR, current_date.year)
+    pending_periods = []
+    for year in range(SCRAP_SCANNER_START_YEAR, max_year + 1):
+        first_month = SCRAP_SCANNER_START_MONTH if year == SCRAP_SCANNER_START_YEAR else 1
+        for month in range(first_month, 13):
+            pending_periods.append((year, month))
+
     pending_by_month = []
     pending_records = []
-    for month in range(1, 13):
-        screens = bbdd_by_month[month]
-        scanned_serials = scanned_serials_by_month[month]
+    for year, month in pending_periods:
+        period_key = f'{year}-{month:02d}'
+        screens = bbdd_by_month[(year, month)]
+        scanned_serials = scanned_serials_by_month[(year, month)]
         received_serials = screens.keys() & all_scanned_serials
         pending_screens = [
             screen for serial, screen in screens.items()
             if serial not in received_serials
         ]
         pending_records.extend({
+            'monthKey': period_key,
+            'year': year,
             'month': month,
             'serial': screen['serial'],
             'model': screen['model'],
             'date': screen['date']
         } for screen in pending_screens)
+        month_label = month_names[month - 1]
+        short_label = month_label[:3]
+        if max_year > SCRAP_SCANNER_START_YEAR:
+            month_label = f'{month_label} {year}'
+            short_label = f'{short_label} {str(year)[-2:]}'
         pending_by_month.append({
+            'key': period_key,
+            'year': year,
             'month': month,
-            'name': month_names[month - 1],
+            'name': month_label,
+            'shortName': short_label,
             'bbddCount': len(screens),
             'scannedCount': len(scanned_serials),
             'receivedCount': len(received_serials),
             'pendingCount': len(pending_screens)
         })
 
-    today_screens = bbdd_by_month[current_date.month]
+    today_screens = bbdd_by_month[(current_date.year, current_date.month)]
     today_screens = {
         serial: screen for serial, screen in today_screens.items()
         if screen['disposedAt'].date() == current_date
@@ -636,6 +657,8 @@ def build_scrap_scanner_payload(records, bbdd_records, today=None):
     ]
     unregistered_scans_by_serial = {}
     for record in records:
+        if record['scannedAt'] < SCRAP_SCANNER_START_DATE:
+            continue
         serial_key = normalize_scrap_serial(record['serial'])
         if not serial_key or serial_key in rma_serials:
             continue
