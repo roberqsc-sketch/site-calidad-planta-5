@@ -2864,7 +2864,7 @@
   </div>
 
   <!-- Scripts -->
-  <script src="app.js?v=20261111-line-rules-not-applicable"></script>
+  <script src="app.js?v=20261111-minimal-cell-modal"></script>
 
   <!-- MODAL: VISOR CARRUSEL DE FOTOS DE EVENTOS TV -->
   <div id="tvPhotoCarouselModal" class="fixed inset-0 z-[100] hidden items-center justify-center bg-slate-950/85 p-3 sm:p-6 backdrop-blur-sm" onclick="if(event.target===this) window.closeTvPhotoCarousel()">
@@ -2990,6 +2990,34 @@
         </button>
         <button id="minimalConfirmAcceptBtn" type="button" class="rounded-xl bg-rose-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-rose-700 transition-colors cursor-pointer">
           Eliminar
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- MODAL MINIMALISTA: DETALLE DIARIO DE CELDA & SWITCHES NO APLICA -->
+  <div id="dailyAuditCellModal" onclick="if (event.target === this) window.closeDailyAuditCellModal()" class="fixed inset-0 z-[60] hidden flex items-center justify-center p-4 bg-slate-900/45 backdrop-blur-xs">
+    <div class="flex flex-col w-full max-w-2xl max-h-[86vh] overflow-hidden rounded-2xl bg-white shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+      <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 bg-white shrink-0">
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <h3 id="dailyAuditCellModalTitle" class="text-sm font-extrabold text-slate-900 truncate">Detalle del día</h3>
+            <span id="dailyAuditCellModalStatusPill" class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold border-emerald-200 bg-emerald-50 text-emerald-700">Línea Activa</span>
+          </div>
+          <p id="dailyAuditCellModalSubtitle" class="text-[11px] text-slate-500 mt-0.5 capitalize truncate">Control diario de formularios</p>
+        </div>
+        <button type="button" onclick="window.closeDailyAuditCellModal()" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors cursor-pointer shrink-0" aria-label="Cerrar ventana">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div id="dailyAuditCellModalBody" class="flex-1 overflow-y-auto p-5 space-y-4 bg-slate-50/40"></div>
+
+      <div class="flex items-center justify-between border-t border-slate-100 px-5 py-3 bg-white shrink-0">
+        <span class="text-[10.5px] text-slate-400">Los switches se guardan automáticamente para todo el equipo</span>
+        <button type="button" onclick="window.closeDailyAuditCellModal()" class="rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer">
+          Listo
         </button>
       </div>
     </div>

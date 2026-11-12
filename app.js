@@ -7027,54 +7027,50 @@ function hideMatrixHoverTooltip() {
   }
 }
 
+window.closeDailyAuditCellModal = function() {
+  isDailyAuditDetailsOpen = false;
+  pendingLineDisable = null;
+  const modal = document.getElementById('dailyAuditCellModal');
+  if (modal) modal.classList.add('hidden');
+};
+
 function renderDailyAuditDetails(line, date, isFuture) {
-  const details = document.getElementById('dashboardAuditDayDetails');
+  const details = document.getElementById('dailyAuditCellModalBody');
+  const modalTitle = document.getElementById('dailyAuditCellModalTitle');
+  const modalSubtitle = document.getElementById('dailyAuditCellModalSubtitle');
+  const modalStatusPill = document.getElementById('dailyAuditCellModalStatusPill');
   if (!details) return;
   details.replaceChildren();
 
-  const header = document.createElement('div');
-  header.className = 'flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200';
-  const title = document.createElement('h4');
-  title.className = 'text-sm font-bold text-slate-900';
   const dateLabel = new Intl.DateTimeFormat('es-AR', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric'
   }).format(date);
-  title.textContent = `${line.lineCode} · ${dateLabel}`;
-  const closeButton = document.createElement('button');
-  closeButton.type = 'button';
-  closeButton.className = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:bg-slate-100 shadow-2xs';
-  closeButton.textContent = '✕ Cerrar detalle';
-  closeButton.setAttribute('aria-label', 'Cerrar detalle de auditoría');
-  closeButton.addEventListener('click', () => {
-    isDailyAuditDetailsOpen = false;
-    details.classList.add('hidden');
-  });
-  header.append(title, closeButton);
 
   const dateKey = getLocalDateKey(date);
   const productionStatus = getLineProductionStatus(line.lineCode, dateKey);
   const isPendingLineDisable = pendingLineDisable?.lineCode === line.lineCode && pendingLineDisable.dateKey === dateKey;
-  
-  const statusPill = document.createElement('span');
-  statusPill.className = `inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${
-    productionStatus || isPendingLineDisable
-      ? 'border-slate-200 bg-slate-100 text-slate-600'
-      : isFuture
-        ? 'border-slate-200 bg-slate-50 text-slate-400'
-        : 'border-emerald-200 bg-emerald-50 text-emerald-700'
-  }`;
-  statusPill.textContent = isFuture
-    ? 'Fecha futura'
-    : isPendingLineDisable
-      ? 'Confirmar sin producción'
-      : productionStatus
-        ? 'Sin producción'
-        : 'Línea Activa';
-  header.appendChild(statusPill);
-  details.appendChild(header);
+
+  if (modalTitle) modalTitle.textContent = line.lineCode;
+  if (modalSubtitle) modalSubtitle.textContent = `${dateLabel} (${dateKey})`;
+  if (modalStatusPill) {
+    modalStatusPill.className = `inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+      productionStatus || isPendingLineDisable
+        ? 'border-slate-200 bg-slate-100 text-slate-600'
+        : isFuture
+          ? 'border-slate-200 bg-slate-50 text-slate-400'
+          : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    }`;
+    modalStatusPill.textContent = isFuture
+      ? 'Fecha futura'
+      : isPendingLineDisable
+        ? 'Confirmar sin producción'
+        : productionStatus
+          ? 'Sin producción'
+          : 'Línea Activa';
+  }
 
   // Consulta de auditorías reales de las bases de datos y evaluación por reglas de línea
   const lineDayRecords = getDailyAuditRecordsForLine(line.lineCode, dateKey);
@@ -7082,7 +7078,7 @@ function renderDailyAuditDetails(line, date, isFuture) {
 
   if (!isFuture && !productionStatus && daySummary.itemStatuses.length > 0) {
     const checklistCard = document.createElement('div');
-    checklistCard.className = 'mt-3 rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs';
+    checklistCard.className = 'rounded-xl border border-slate-200 bg-white p-4 shadow-2xs';
 
     const checklistHead = document.createElement('div');
     checklistHead.className = 'flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-slate-100';
@@ -7522,16 +7518,19 @@ function renderDashboardOverview() {
     matrixBody.appendChild(row);
   });
 
-  const details = document.getElementById('dashboardAuditDayDetails');
-  if (initialSelection && isDailyAuditDetailsOpen) {
+  const inlineDetails = document.getElementById('dashboardAuditDayDetails');
+  if (inlineDetails) inlineDetails.classList.add('hidden');
+
+  const cellModal = document.getElementById('dailyAuditCellModal');
+  if (initialSelection && isDailyAuditDetailsOpen && cellModal) {
     selectedDailyAuditCell = {
       lineCode: initialSelection.line.lineCode,
       dateKey: getLocalDateKey(initialSelection.date)
     };
-    details.classList.remove('hidden');
     renderDailyAuditDetails(initialSelection.line, initialSelection.date, initialSelection.isFuture);
-  } else if (details) {
-    details.classList.add('hidden');
+    cellModal.classList.remove('hidden');
+  } else if (cellModal) {
+    cellModal.classList.add('hidden');
   }
 }
 
@@ -10008,9 +10007,16 @@ window.closeAuditFormDetailModal = function() {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    const confirmModal = document.getElementById('minimalConfirmModal');
+    if (confirmModal && !confirmModal.classList.contains('hidden')) return;
     const detailModal = document.getElementById('auditFormDetailModal');
     if (detailModal && !detailModal.classList.contains('hidden')) {
       window.closeAuditFormDetailModal();
+      return;
+    }
+    const cellModal = document.getElementById('dailyAuditCellModal');
+    if (cellModal && !cellModal.classList.contains('hidden')) {
+      window.closeDailyAuditCellModal();
     }
   }
 });
