@@ -113,9 +113,9 @@ AUDIT_SHEETS_CONFIG = {
     }
 }
 AUDIT_SHEETS_CACHE_TTL_SECONDS = 15
-MODEL_SEARCH_BOM_CSV_URL = 'https://docs.google.com/spreadsheets/d/1c1VBZkx5XPPfcltxgOO2g2E7GKR7tgmy0xX3L67LQ34/export?format=csv&gid=13176987'
+MODEL_SEARCH_BOM_CSV_URL = 'https://docs.google.com/spreadsheets/d/1c1VBZkx5XPPFcltxgOO2g2E7GKR7tgmy0xX3L67LQ34/export?format=csv&gid=13176987'
 MODEL_SEARCH_CERT_CSV_URL = 'https://docs.google.com/spreadsheets/d/1Po2A4T_9hW8rFi2huMiCzH9Sh7cayHBEa6SNMmJtGAw/export?format=csv&gid=1460550420'
-MODEL_SEARCH_SPEC_CSV_URL = 'https://docs.google.com/spreadsheets/d/1c1VBZkx5XPPfcltxgOO2g2E7GKR7tgmy0xX3L67LQ34/export?format=csv&gid=853792234'
+MODEL_SEARCH_SPEC_CSV_URL = 'https://docs.google.com/spreadsheets/d/1c1VBZkx5XPPFcltxgOO2g2E7GKR7tgmy0xX3L67LQ34/export?format=csv&gid=853792234'
 MODEL_SEARCH_CACHE_LOCK = threading.Lock()
 MODEL_SEARCH_CACHE = {'payload_bytes': None, 'loaded_at': 0.0}
 AUDIT_SHEETS_CACHE_LOCK = threading.Lock()
