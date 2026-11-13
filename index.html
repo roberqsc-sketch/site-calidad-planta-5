@@ -358,7 +358,7 @@
                         <button type="button" onclick="window.navigateWeeklyMatrix(0)" title="Semana actual" class="px-2 py-0.5 rounded hover:bg-slate-100 text-[10px] font-bold text-slate-700 border-x border-slate-200 transition-colors">Hoy</button>
                         <button type="button" onclick="window.navigateWeeklyMatrix(1)" title="Semana siguiente" class="px-2 py-0.5 rounded hover:bg-slate-100 text-[11px] font-bold text-slate-700 transition-colors">Sig ▶</button>
                       </div>
-                      <button id="btnOpenLineAuditorModal" type="button" onclick="window.openLineAuditorModal()" title="Asignar auditores por línea de producción" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all shadow-2xs hover:border-slate-300">
+                      <button id="btnOpenLineAuditorModal" type="button" onclick="window.openLineAuditorModal()" title="Asignar auditores por línea de producción" class="hidden inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all shadow-2xs hover:border-slate-300">
                         <svg class="w-3.5 h-3.5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
                         <span>Asignar auditores</span>
                       </button>
@@ -2879,7 +2879,7 @@
   </div>
 
   <!-- Scripts -->
-  <script src="app.js?v=20261112-auditors-unified"></script>
+  <script src="app.js?v=20261112-admin-only-contacts"></script>
 
   <!-- MODAL: VISOR CARRUSEL DE FOTOS DE EVENTOS TV -->
   <div id="tvPhotoCarouselModal" class="fixed inset-0 z-[100] hidden items-center justify-center bg-slate-950/85 p-3 sm:p-6 backdrop-blur-sm" onclick="if(event.target===this) window.closeTvPhotoCarousel()">

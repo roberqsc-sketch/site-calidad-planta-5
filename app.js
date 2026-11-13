@@ -4824,6 +4824,7 @@ async function loadQualityTeamMembers() {
 }
 
 function createQualityTeamActions(member) {
+  if (!isAdministrator()) return document.createComment('admin-only');
   const actions = document.createElement('div');
   actions.className = 'mt-2 flex flex-wrap gap-1.5';
   const editButton = document.createElement('button');
@@ -5210,8 +5211,17 @@ function applyUserToUI(user) {
   if (adminNavGroup) adminNavGroup.classList.toggle('hidden', !isAdministrator(user));
   const screenValidationNav = document.querySelector('.nav-subitem[data-view="validacion-pantallas"]');
   if (screenValidationNav) screenValidationNav.classList.toggle('hidden', !isAdministrator(user));
+  const isAdminUser = isAdministrator(user);
   const qualityTeamAdminControls = document.getElementById('qualityTeamAdminControls');
-  if (qualityTeamAdminControls) qualityTeamAdminControls.classList.toggle('hidden', !isAdministrator(user));
+  if (qualityTeamAdminControls) qualityTeamAdminControls.classList.toggle('hidden', !isAdminUser);
+  const btnOpenLineAuditorModal = document.getElementById('btnOpenLineAuditorModal');
+  if (btnOpenLineAuditorModal) btnOpenLineAuditorModal.classList.toggle('hidden', !isAdminUser);
+  if (window._lastRenderedTeamAdminState !== isAdminUser) {
+    window._lastRenderedTeamAdminState = isAdminUser;
+    if (typeof loadQualityTeamMembers === 'function' && document.getElementById('qualityTeamDepartments')) {
+      loadQualityTeamMembers();
+    }
+  }
 
   const headerAvatar = document.getElementById('headerUserAvatar');
   const headerName = document.getElementById('headerUserName');
@@ -9617,6 +9627,10 @@ async function loadLineAuditorAssignments() {
 }
 
 window.openLineAuditorModal = async function() {
+  if (!isAdministrator()) {
+    showToast('Solo los administradores pueden asignar auditores.');
+    return;
+  }
   const modal = document.getElementById('lineAuditorModal');
   const body = document.getElementById('lineAuditorModalBody');
   if (!modal || !body) return;
@@ -9718,6 +9732,10 @@ window.closeLineAuditorModal = function() {
 };
 
 window.saveLineAuditorAssignments = async function() {
+  if (!isAdministrator()) {
+    showToast('Solo los administradores pueden guardar asignaciones de auditores.');
+    return;
+  }
   const saveBtn = document.getElementById('btnSaveLineAuditorModal');
   const cards = document.querySelectorAll('#lineAuditorModalBody [data-line-code]');
   if (!cards.length) return;
