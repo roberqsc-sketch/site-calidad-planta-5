@@ -9779,55 +9779,63 @@ function selectModelSearchResult(modelKey) {
 
   document.getElementById('modelSearchEmptyState')?.classList.add('hidden');
   document.getElementById('modelSearchResults')?.classList.remove('hidden');
-  const titleEl = document.getElementById('modelSearchSelectedTitle');
-  if (titleEl) titleEl.textContent = entry.model;
 
-  // 1. Certificados RG-0612
-  const cert = entry.certificates[0] || null;
-  const pillsEl = document.getElementById('modelSearchMetaPills');
-  if (pillsEl) {
-    const pills = [];
-    if (cert?.brand) pills.push(`<span class="rounded-full bg-white border border-slate-200 px-3 py-1 text-xs font-bold text-slate-700">Marca: ${escapeAuditReportText(cert.brand)}</span>`);
-    if (cert?.chassis) pills.push(`<span class="rounded-full bg-white border border-slate-200 px-3 py-1 text-xs font-bold text-slate-700">Chasis: ${escapeAuditReportText(cert.chassis)}</span>`);
-    if (cert?.condition) {
-      const isVig = cert.condition.toLowerCase().includes('vigente');
-      pills.push(`<span class="rounded-full px-3 py-1 text-xs font-extrabold border ${isVig ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-800'}">${escapeAuditReportText(cert.condition)}</span>`);
+  const docIconSvg = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>';
+  const renderIconLinks = (value, titleText) => {
+    const trimmed = String(value || '').trim();
+    const urls = trimmed.match(/https?:\/\/[^\s,;]+/gi) || [];
+    if (urls.length > 0) {
+      return `<div class="inline-flex items-center justify-center gap-1">${urls.map((u, idx) => `<a href="${escapeAuditReportText(u)}" target="_blank" rel="noopener noreferrer" title="${escapeAuditReportText(titleText)}${urls.length > 1 ? ' #' + (idx + 1) : ''}" class="inline-flex h-6 w-6 items-center justify-center rounded-md bg-red-800 text-white hover:bg-red-700 transition shadow-2xs">${docIconSvg}</a>`).join('')}</div>`;
     }
-    pillsEl.innerHTML = pills.join('') || '<span class="text-xs text-slate-400">Sin registro en RG-0612</span>';
+    return `<span class="text-[11px] text-slate-400">${escapeAuditReportText(trimmed || '—')}</span>`;
+  };
+
+  // 1. Certificados RG-0612 (tabla compacta estilo AI Studio)
+  const certBody = document.getElementById('modelSearchCertTableBody');
+  if (certBody) {
+    const certs = entry.certificates.length ? entry.certificates : [null];
+    certBody.innerHTML = certs.map(cert => {
+      const cond = cert?.condition || '—';
+      const isVig = cond.toLowerCase().includes('vigente');
+      const condBadge = cert?.condition
+        ? `<span class="inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-bold ${isVig ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'}">${escapeAuditReportText(cond)}</span>`
+        : '<span class="text-slate-400">—</span>';
+      return `
+        <tr class="hover:bg-slate-50/70">
+          <td class="px-4 py-2.5 font-extrabold text-red-700 whitespace-nowrap">${escapeAuditReportText(entry.model)}</td>
+          <td class="px-4 py-2.5 font-semibold text-slate-800">${escapeAuditReportText(cert?.brand || '—')}</td>
+          <td class="px-4 py-2.5 text-slate-700">${escapeAuditReportText(cert?.chassis || '—')}</td>
+          <td class="px-4 py-2.5">${condBadge}</td>
+          <td class="px-4 py-2.5 text-center">${renderIconLinks(cert?.cbUrl, 'Abrir CB / CDF')}</td>
+          <td class="px-4 py-2.5 text-center">${renderIconLinks(cert?.criticosUrl, 'Abrir Críticos')}</td>
+          <td class="px-4 py-2.5 text-center">${renderIconLinks(cert?.ddjjUrl, 'Abrir DDJJ')}</td>
+        </tr>
+      `;
+    }).join('');
   }
 
-  const certLinksEl = document.getElementById('modelSearchCertLinks');
-  if (certLinksEl) {
-    const renderDocTile = (label, value, accentClass) => {
-      const trimmed = String(value || '').trim();
-      if (isSafeHttpUrl(trimmed)) {
-      const urls = trimmed.match(/https?:\/\/[^\s,;]+/gi) || [];
-      if (urls.length === 1) return `<a href="${escapeAuditReportText(urls[0])}" target="_blank" rel="noopener noreferrer" class="flex items-center justify-between gap-2 rounded-xl border bg-white px-3.5 py-3 text-xs font-bold shadow-2xs transition hover:shadow-sm ${accentClass}"><span>${escapeAuditReportText(label)}</span><span class="text-[11px] font-extrabold">Abrir ↗</span></a>`;
-      if (urls.length > 1) return `<div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-xs font-bold text-slate-800"><span>${escapeAuditReportText(label)}</span><div class="flex flex-wrap gap-1.5">${urls.map((u, idx) => `<a href="${escapeAuditReportText(u)}" target="_blank" rel="noopener noreferrer" class="rounded-lg border px-2 py-1 text-[11px] font-extrabold bg-white hover:opacity-80 ${accentClass}">Abrir ${idx + 1} ↗</a>`).join('')}</div></div>`;
-      }
-      return `<div class="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white/70 px-3.5 py-3 text-xs text-slate-500"><span class="font-semibold">${escapeAuditReportText(label)}</span><span class="text-[11px] font-medium">${escapeAuditReportText(trimmed || 'No cargado')}</span></div>`;
-    };
-    certLinksEl.innerHTML = [
-      renderDocTile('Certificado CB / CDF', cert?.cbUrl, 'border-sky-200 text-sky-800 hover:bg-sky-50'),
-      renderDocTile('Críticos (Q.A)', cert?.criticosUrl, 'border-amber-200 text-amber-800 hover:bg-amber-50'),
-      renderDocTile('DDJJ', cert?.ddjjUrl, 'border-emerald-200 text-emerald-800 hover:bg-emerald-50')
-    ].join('');
-  }
-
-  // 2. Lista BOM por Versiones
+  // 2. Lista BOM por Versiones (tabla horizontal minimalista)
   const bomCountEl = document.getElementById('modelSearchBomCount');
-  const bomContainer = document.getElementById('modelSearchBomVersions');
+  const bomHead = document.getElementById('modelSearchBomHead');
+  const bomBody = document.getElementById('modelSearchBomBody');
   if (bomCountEl) bomCountEl.textContent = `${entry.bomVersions.length} versión(es)`;
-  if (bomContainer) {
+  if (bomHead && bomBody) {
     if (!entry.bomVersions.length) {
-      bomContainer.innerHTML = '<span class="text-xs text-slate-400">Sin versiones de Lista BOM cargadas para este modelo.</span>';
+      bomHead.innerHTML = '';
+      bomBody.innerHTML = '<tr><td class="px-4 py-3 text-xs text-slate-400">Sin versiones de Lista BOM disponibles para este modelo.</td></tr>';
     } else {
-      bomContainer.innerHTML = entry.bomVersions.map(v => {
-        if (isSafeHttpUrl(v.url)) {
-          return `<a href="${escapeAuditReportText(v.url)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/70 px-3.5 py-2 text-xs font-extrabold text-indigo-800 hover:bg-indigo-100 transition"><span>${escapeAuditReportText(v.version)}</span><span class="text-[10px]">Abrir BOM ↗</span></a>`;
-        }
-        return `<span class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">${escapeAuditReportText(v.version)}: ${escapeAuditReportText(v.url)}</span>`;
-      }).join('');
+      bomHead.innerHTML = `
+        <tr>
+          <th class="px-4 py-2">Modelo</th>
+          ${entry.bomVersions.map(v => `<th class="px-4 py-2 text-center">${escapeAuditReportText(v.version)}</th>`).join('')}
+        </tr>
+      `;
+      bomBody.innerHTML = `
+        <tr>
+          <td class="px-4 py-2.5 font-extrabold text-red-700 whitespace-nowrap">${escapeAuditReportText(entry.model)}</td>
+          ${entry.bomVersions.map(v => `<td class="px-4 py-2.5 text-center">${renderIconLinks(v.url, 'Abrir BOM ' + v.version)}</td>`).join('')}
+        </tr>
+      `;
     }
   }
 
@@ -9867,24 +9875,26 @@ function renderModelSearchSpecifications() {
     return;
   }
 
+  const docIconSvg = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>';
   const renderLinkCell = (val, label) => {
     const trimmed = String(val || '').trim();
-    if (isSafeHttpUrl(trimmed)) {
-      return `<a href="${escapeAuditReportText(trimmed)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700 hover:bg-sky-100 transition">${label} ↗</a>`;
+    const urls = trimmed.match(/https?:\/\/[^\s,;]+/gi) || [];
+    if (urls.length > 0) {
+      return `<div class="inline-flex items-center justify-center gap-1">${urls.map((u, idx) => `<a href="${escapeAuditReportText(u)}" target="_blank" rel="noopener noreferrer" title="${escapeAuditReportText(label)}${urls.length > 1 ? ' #' + (idx + 1) : ''}" class="inline-flex h-6 w-6 items-center justify-center rounded-md bg-red-800 text-white hover:bg-red-700 transition shadow-2xs">${docIconSvg}</a>`).join('')}</div>`;
     }
     return `<span class="text-[11px] text-slate-400">${escapeAuditReportText(trimmed || '—')}</span>`;
   };
 
   tbody.innerHTML = filtered.map(s => `
-    <tr class="hover:bg-slate-50/80">
-      <td class="px-3 py-2.5 font-bold text-slate-800 whitespace-nowrap">${escapeAuditReportText(s.material || '—')}</td>
-      <td class="px-3 py-2.5">
+    <tr class="hover:bg-slate-50/70">
+      <td class="px-4 py-2.5 font-bold text-slate-800 whitespace-nowrap">${escapeAuditReportText(s.material || '—')}</td>
+      <td class="px-4 py-2.5">
         <div class="font-mono font-bold text-slate-900">${escapeAuditReportText(s.partNumber || '—')}</div>
         ${s.description ? `<div class="text-[10.5px] text-slate-500 mt-0.5">${escapeAuditReportText(s.description)}</div>` : ''}
       </td>
-      <td class="px-3 py-2.5 font-bold text-slate-700 whitespace-nowrap">${escapeAuditReportText(s.version || '—')}</td>
-      <td class="px-3 py-2.5 whitespace-nowrap">${renderLinkCell(s.specArteUrl, 'Spec Arte')}</td>
-      <td class="px-3 py-2.5 whitespace-nowrap">${renderLinkCell(s.specPlanoUrl, 'Spec Plano')}</td>
+      <td class="px-4 py-2.5 font-bold text-slate-700 whitespace-nowrap">${escapeAuditReportText(s.version || '—')}</td>
+      <td class="px-4 py-2.5 text-center whitespace-nowrap">${renderLinkCell(s.specArteUrl, 'Spec Arte')}</td>
+      <td class="px-4 py-2.5 text-center whitespace-nowrap">${renderLinkCell(s.specPlanoUrl, 'Spec Plano')}</td>
     </tr>
   `).join('');
 }
