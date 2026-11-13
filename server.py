@@ -1263,6 +1263,49 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     'SELECT line_code, auditor1_name, auditor1_email, auditor2_name, auditor2_email, updated_at '
                     'FROM line_auditor_assignments'
                 ).fetchall()
+                team_rows = connection.execute(
+                    'SELECT full_name, email, sector FROM quality_team_members '
+                    'ORDER BY full_name COLLATE NOCASE'
+                ).fetchall()
+                user_rows = connection.execute(
+                    'SELECT full_name, email, role, shift FROM users '
+                    'ORDER BY full_name COLLATE NOCASE'
+                ).fetchall()
+
+            candidates_by_key = {}
+            for row in team_rows:
+                full_name = str(row['full_name'] or '').strip()
+                if not full_name:
+                    continue
+                key = full_name.casefold()
+                candidates_by_key[key] = {
+                    'fullName': full_name,
+                    'email': str(row['email'] or '').strip(),
+                    'sector': str(row['sector'] or '').strip(),
+                    'source': 'team'
+                }
+            for row in user_rows:
+                full_name = str(row['full_name'] or '').strip()
+                if not full_name:
+                    continue
+                key = full_name.casefold()
+                user_email = str(row['email'] or '').strip() if 'email' in row.keys() else ''
+                user_role = str(row['role'] or '').strip() or 'Usuario del sistema'
+                if key in candidates_by_key:
+                    if not candidates_by_key[key]['email'] and user_email:
+                        candidates_by_key[key]['email'] = user_email
+                    if not candidates_by_key[key]['sector']:
+                        candidates_by_key[key]['sector'] = user_role
+                    candidates_by_key[key]['source'] = 'both'
+                else:
+                    candidates_by_key[key] = {
+                        'fullName': full_name,
+                        'email': user_email,
+                        'sector': user_role,
+                        'source': 'user'
+                    }
+
+            candidates = sorted(candidates_by_key.values(), key=lambda c: c['fullName'].casefold())
             self.send_json(200, {
                 'assignments': [
                     {
@@ -1274,7 +1317,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         'updatedAt': row['updated_at']
                     }
                     for row in rows
-                ]
+                ],
+                'candidates': candidates
             })
             return
         if path == '/api/line-auditors':
@@ -1447,7 +1491,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return
             with self.database() as connection:
                 users = connection.execute(
-                    'SELECT username, full_name, initials, role, shift, avatar_bg, is_admin '
+                    'SELECT username, full_name, email, initials, role, shift, avatar_bg, is_admin '
                     'FROM users ORDER BY full_name COLLATE NOCASE'
                 ).fetchall()
             self.send_json(200, {'users': [self.public_user(user) for user in users]})
@@ -1944,6 +1988,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             full_name = body.get('fullName', '')
             username = body.get('username', '')
             password = body.get('password', '')
+            email = body.get('email', '')
+            assigned_line = body.get('assignedLine', '')
             role = body.get('role', '')
             shift = body.get('shift', '')
             is_admin = body.get('isAdmin', False)
@@ -1951,25 +1997,69 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 not isinstance(full_name, str) or not full_name.strip() or len(full_name.strip()) > 80 or
                 not isinstance(username, str) or not re.fullmatch(r'[a-z0-9._-]{2,40}', username) or
                 not isinstance(password, str) or len(password) < 12 or len(password) > 128 or
+                not isinstance(email, str) or len(email.strip()) > 120 or
+                not isinstance(assigned_line, str) or len(assigned_line.strip()) > 80 or
                 not isinstance(role, str) or len(role.strip()) > 80 or
                 not isinstance(shift, str) or len(shift.strip()) > 80 or
                 not isinstance(is_admin, bool)
             ):
                 self.send_json(400, {'error': 'Revisá los datos: nombre, usuario válido y contraseña de al menos 12 caracteres.'})
                 return
+            clean_name = full_name.strip()
+            clean_email = email.strip()
+            clean_line = assigned_line.strip()
             salt = secrets.token_bytes(16)
             password_hash = self.hash_password(password, salt)
-            initials = ''.join(part[0] for part in full_name.strip().split()[:2]).upper()
+            initials = ''.join(part[0] for part in clean_name.split()[:2]).upper()
+            now_ts = int(time.time())
             try:
                 with self.database() as connection:
                     connection.execute(
-                        'INSERT INTO users (username, full_name, initials, role, shift, avatar_bg, is_admin, '
+                        'INSERT INTO users (username, full_name, email, initials, role, shift, avatar_bg, is_admin, '
                         'password_salt, password_hash, password_iterations, created_at) '
-                        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                        (username, full_name.strip(), initials, role.strip() or 'Personal de Calidad',
+                        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                        (username, clean_name, clean_email, initials, role.strip() or 'Personal de Calidad',
                          shift.strip() or 'Turno General', 'bg-red-600' if is_admin else 'bg-blue-600',
-                         int(is_admin), salt.hex(), password_hash.hex(), PASSWORD_HASH_ITERATIONS, int(time.time()))
+                         int(is_admin), salt.hex(), password_hash.hex(), PASSWORD_HASH_ITERATIONS, now_ts)
                     )
+                    if clean_line:
+                        connection.execute('''
+                            CREATE TABLE IF NOT EXISTS line_auditor_assignments (
+                                line_code TEXT PRIMARY KEY,
+                                auditor1_name TEXT NOT NULL DEFAULT '',
+                                auditor1_email TEXT NOT NULL DEFAULT '',
+                                auditor2_name TEXT NOT NULL DEFAULT '',
+                                auditor2_email TEXT NOT NULL DEFAULT '',
+                                updated_at INTEGER NOT NULL
+                            )
+                        ''')
+                        existing = connection.execute(
+                            'SELECT auditor1_name, auditor1_email, auditor2_name, auditor2_email '
+                            'FROM line_auditor_assignments WHERE line_code = ?',
+                            (clean_line,)
+                        ).fetchone()
+                        if not existing:
+                            a1_name, a1_email, a2_name, a2_email = clean_name, clean_email, '', ''
+                        elif not existing['auditor1_name']:
+                            a1_name, a1_email = clean_name, clean_email
+                            a2_name, a2_email = existing['auditor2_name'], existing['auditor2_email']
+                        elif not existing['auditor2_name'] and existing['auditor1_name'].casefold() != clean_name.casefold():
+                            a1_name, a1_email = existing['auditor1_name'], existing['auditor1_email']
+                            a2_name, a2_email = clean_name, clean_email
+                        else:
+                            a1_name, a1_email = clean_name, clean_email
+                            a2_name, a2_email = existing['auditor2_name'], existing['auditor2_email']
+                        connection.execute('''
+                            INSERT INTO line_auditor_assignments
+                                (line_code, auditor1_name, auditor1_email, auditor2_name, auditor2_email, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(line_code) DO UPDATE SET
+                                auditor1_name = excluded.auditor1_name,
+                                auditor1_email = excluded.auditor1_email,
+                                auditor2_name = excluded.auditor2_name,
+                                auditor2_email = excluded.auditor2_email,
+                                updated_at = excluded.updated_at
+                        ''', (clean_line, a1_name, a1_email, a2_name, a2_email, now_ts))
             except sqlite3.IntegrityError:
                 self.send_json(409, {'error': 'Ese nombre de usuario ya está registrado.'})
                 return
@@ -2184,6 +2274,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return {
             'username': user['username'],
             'fullName': user['full_name'],
+            'email': user['email'] if 'email' in user.keys() else '',
             'initials': user['initials'],
             'role': user['role'],
             'shift': user['shift'],
@@ -3103,6 +3194,9 @@ def initialize_auth_database():
     connection = sqlite3.connect(AUTH_DB_PATH, timeout=10)
     try:
         connection.execute('PRAGMA foreign_keys = ON')
+        user_columns = {row[1] for row in connection.execute('PRAGMA table_info(users)').fetchall()}
+        if user_columns and 'email' not in user_columns:
+            connection.execute("ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''")
         connection.executescript(
             '''
             CREATE TABLE IF NOT EXISTS users (

@@ -4895,7 +4895,7 @@ async function renderServerUserManagement() {
       <tr class="border-t border-slate-100">
         <td class="px-4 py-3">
           <div class="font-semibold text-slate-800">${escapeAuditReportText(user.fullName)}</div>
-          <div class="text-[10px] text-slate-500">${escapeAuditReportText(user.role || 'Personal de Calidad')}</div>
+          <div class="text-[10px] text-slate-500">${escapeAuditReportText(user.role || 'Personal de Calidad')}${user.email ? ` · ${escapeAuditReportText(user.email)}` : ''}</div>
         </td>
         <td class="px-4 py-3 font-mono text-slate-700">${escapeAuditReportText(user.username)}</td>
         <td class="px-4 py-3">${user.isAdmin
@@ -4978,6 +4978,8 @@ function initUserManagement() {
       const fullName = document.getElementById('adminNewFullName').value.trim();
       const username = document.getElementById('adminNewUsername').value.trim().toLocaleLowerCase();
       const password = document.getElementById('adminNewPassword').value;
+      const email = document.getElementById('adminNewEmail')?.value.trim() || '';
+      const assignedLine = document.getElementById('adminNewAssignedLine')?.value.trim() || '';
       const role = document.getElementById('adminNewRole').value.trim() || 'Personal de Calidad';
       const shift = document.getElementById('adminNewShift').value;
       const isAdmin = document.getElementById('adminNewIsAdmin').checked;
@@ -4993,7 +4995,7 @@ function initUserManagement() {
       try {
         await requestAuthApi('/api/admin/users', {
           method: 'POST',
-          body: JSON.stringify({ fullName, username, password, role, shift, isAdmin })
+          body: JSON.stringify({ fullName, username, password, email, assignedLine, role, shift, isAdmin })
         });
       } catch (error) {
         showToast(error.message);
@@ -5001,7 +5003,13 @@ function initUserManagement() {
       }
       form.reset();
       renderServerUserManagement();
-      showToast(`Usuario ${fullName} agregado al sistema compartido.`);
+      if (assignedLine && typeof window.fetchLineAuditorAssignments === 'function') {
+        await window.fetchLineAuditorAssignments();
+        if (typeof renderDashboardOverview === 'function') renderDashboardOverview();
+      }
+      showToast(assignedLine
+        ? `Usuario ${fullName} agregado y asignado a ${assignedLine}.`
+        : `Usuario ${fullName} agregado al sistema compartido (ya disponible para asignar a líneas).`);
     });
   }
 }
@@ -9617,14 +9625,16 @@ window.openLineAuditorModal = async function() {
   body.innerHTML = '<div class="text-center py-6 text-slate-400 text-xs">Cargando equipo de calidad y asignaciones...</div>';
 
   try {
-    // Cargar asignaciones y equipo de calidad
+    // Cargar asignaciones y directorio unificado (Usuarios + Equipo de Calidad)
     const [assignmentsRes, teamRes] = await Promise.all([
-      requestAuthApi('/api/line-auditors').catch(() => ({ assignments: [] })),
+      requestAuthApi('/api/line-auditors').catch(() => ({ assignments: [], candidates: [] })),
       requestAuthApi('/api/quality-team').catch(() => ({ members: [] }))
     ]);
 
     const assignments = assignmentsRes.assignments || AppState.lineAuditorAssignments || [];
-    const members = teamRes.members || [];
+    const members = (Array.isArray(assignmentsRes.candidates) && assignmentsRes.candidates.length > 0)
+      ? assignmentsRes.candidates
+      : (teamRes.members || []);
     AppState.lineAuditorAssignments = assignments;
 
     // Líneas a configurar
@@ -9660,17 +9670,24 @@ window.openLineAuditorModal = async function() {
       const selectorsGrid = document.createElement('div');
       selectorsGrid.className = 'grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1';
 
+      const renderAuditorOptions = (selectedName, emptyLabel) => {
+        const opts = [`<option value="">${emptyLabel}</option>`];
+        members.forEach(m => {
+          const safeName = escapeAuditReportText(m.fullName);
+          const safeEmail = escapeAuditReportText(m.email || '');
+          const sectorPart = m.sector ? ` (${escapeAuditReportText(m.sector.split('·')[0].trim())})` : '';
+          const selectedAttr = selectedName === m.fullName ? 'selected' : '';
+          opts.push(`<option value="${safeName}" data-email="${safeEmail}" ${selectedAttr}>${safeName}${sectorPart}</option>`);
+        });
+        return opts.join('');
+      };
+
       // Dropdown Auditor 1
       const a1Col = document.createElement('div');
       a1Col.innerHTML = `
         <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">Auditor 1 (Principal)</label>
         <select class="line-auditor-select-1 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 font-medium focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-200">
-          <option value="">— Sin auditor asignado —</option>
-          ${members.map(m => `
-            <option value="${m.fullName}" data-email="${m.email || ''}" ${current.auditor1Name === m.fullName ? 'selected' : ''}>
-              ${m.fullName} ${m.sector ? '(' + m.sector.split('·')[0].trim() + ')' : ''}
-            </option>
-          `).join('')}
+          ${renderAuditorOptions(current.auditor1Name, '— Sin auditor asignado —')}
         </select>
       `;
       selectorsGrid.appendChild(a1Col);
@@ -9680,12 +9697,7 @@ window.openLineAuditorModal = async function() {
       a2Col.innerHTML = `
         <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">Auditor 2 (Apoyo / Opcional)</label>
         <select class="line-auditor-select-2 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 font-medium focus:border-red-400 focus:outline-none focus:ring-1 focus:ring-red-200">
-          <option value="">— Ninguno —</option>
-          ${members.map(m => `
-            <option value="${m.fullName}" data-email="${m.email || ''}" ${current.auditor2Name === m.fullName ? 'selected' : ''}>
-              ${m.fullName} ${m.sector ? '(' + m.sector.split('·')[0].trim() + ')' : ''}
-            </option>
-          `).join('')}
+          ${renderAuditorOptions(current.auditor2Name, '— Ninguno —')}
         </select>
       `;
       selectorsGrid.appendChild(a2Col);

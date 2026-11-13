@@ -2541,8 +2541,23 @@
                 <label class="text-xs font-semibold text-slate-600">Contraseña inicial
                   <input id="adminNewPassword" type="password" required minlength="12" maxlength="128" autocomplete="new-password" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800">
                 </label>
+                <label class="text-xs font-semibold text-slate-600">Email / contacto (opcional)
+                  <input id="adminNewEmail" type="email" maxlength="120" placeholder="nombre@newsan.com.ar" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800">
+                </label>
                 <label class="text-xs font-semibold text-slate-600">Función / sector
                   <input id="adminNewRole" type="text" maxlength="80" placeholder="Ej.: Auditor de línea" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800">
+                </label>
+                <label class="text-xs font-semibold text-slate-600">Línea asignada (opcional)
+                  <select id="adminNewAssignedLine" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800">
+                    <option value="">— Asignar después —</option>
+                    <option value="LCD 6">LCD 6</option>
+                    <option value="LCD 8">LCD 8</option>
+                    <option value="CELDA 1">CELDA 1</option>
+                    <option value="CELDA 2">CELDA 2</option>
+                    <option value="CELDA 3">CELDA 3</option>
+                    <option value="INSERCIÓN MANUAL & JIG">INSERCIÓN MANUAL &amp; JIG</option>
+                    <option value="INSERCIÓN PLACAS">INSERCIÓN PLACAS</option>
+                  </select>
                 </label>
                 <label class="text-xs font-semibold text-slate-600">Turno
                   <select id="adminNewShift" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800">
@@ -2864,7 +2879,7 @@
   </div>
 
   <!-- Scripts -->
-  <script src="app.js?v=20261112-audits-live-sync"></script>
+  <script src="app.js?v=20261112-auditors-unified"></script>
 
   <!-- MODAL: VISOR CARRUSEL DE FOTOS DE EVENTOS TV -->
   <div id="tvPhotoCarouselModal" class="fixed inset-0 z-[100] hidden items-center justify-center bg-slate-950/85 p-3 sm:p-6 backdrop-blur-sm" onclick="if(event.target===this) window.closeTvPhotoCarousel()">
