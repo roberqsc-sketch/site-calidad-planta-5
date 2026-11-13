@@ -117,6 +117,8 @@ MODEL_SEARCH_BOM_CSV_URL = 'https://docs.google.com/spreadsheets/d/1c1VBZkx5XPPF
 MODEL_SEARCH_CERT_CSV_URL = 'https://docs.google.com/spreadsheets/d/1Po2A4T_9hW8rFi2huMiCzH9Sh7cayHBEa6SNMmJtGAw/export?format=csv&gid=1460550420'
 MODEL_SEARCH_SPEC_CSV_URL = 'https://docs.google.com/spreadsheets/d/1c1VBZkx5XPPFcltxgOO2g2E7GKR7tgmy0xX3L67LQ34/export?format=csv&gid=853792234'
 MODEL_SEARCH_CACHE_LOCK = threading.Lock()
+MODEL_SEARCH_REFRESH_LOCK = threading.Lock()
+MODEL_SEARCH_REFRESHING = threading.Event()
 MODEL_SEARCH_CACHE = {'payload_bytes': None, 'loaded_at': 0.0}
 AUDIT_SHEETS_CACHE_LOCK = threading.Lock()
 AUDIT_SHEETS_REFRESH_LOCK = threading.Lock()
@@ -3304,18 +3306,39 @@ def _build_model_search_payload():
     return loaded_at, payload_bytes
 
 
+def refresh_model_search_snapshot_sync():
+    with MODEL_SEARCH_REFRESH_LOCK:
+        MODEL_SEARCH_REFRESHING.set()
+        try:
+            loaded_at, payload_bytes = _build_model_search_payload()
+            with MODEL_SEARCH_CACHE_LOCK:
+                MODEL_SEARCH_CACHE['payload_bytes'] = payload_bytes
+                MODEL_SEARCH_CACHE['loaded_at'] = float(loaded_at)
+            return payload_bytes
+        finally:
+            MODEL_SEARCH_REFRESHING.clear()
+
+
+def refresh_model_search_in_background():
+    if MODEL_SEARCH_REFRESHING.is_set():
+        return
+    threading.Thread(
+        target=refresh_model_search_snapshot_sync,
+        name='model-search-refresh',
+        daemon=True
+    ).start()
+
+
 def get_model_search_payload(force_refresh=False):
     if not force_refresh:
         with MODEL_SEARCH_CACHE_LOCK:
             payload_bytes = MODEL_SEARCH_CACHE.get('payload_bytes')
             cache_age = time.time() - MODEL_SEARCH_CACHE['loaded_at']
-        if payload_bytes is not None and cache_age < SCRAP_SCREENS_CACHE_TTL_SECONDS:
+        if payload_bytes is not None:
+            if cache_age >= SCRAP_SCREENS_CACHE_TTL_SECONDS:
+                refresh_model_search_in_background()
             return payload_bytes
-    loaded_at, payload_bytes = _build_model_search_payload()
-    with MODEL_SEARCH_CACHE_LOCK:
-        MODEL_SEARCH_CACHE['payload_bytes'] = payload_bytes
-        MODEL_SEARCH_CACHE['loaded_at'] = float(loaded_at)
-    return payload_bytes
+    return refresh_model_search_snapshot_sync()
 
 
 def get_audit_sheets_payload(force_refresh=False):
@@ -3343,6 +3366,7 @@ def run():
         refresh_scrap_screens_in_background()
         refresh_scrap_scanner_payload_in_background()
         refresh_audit_sheets_in_background()
+        refresh_model_search_in_background()
 
         def audit_sheets_auto_worker():
             while True:

@@ -636,6 +636,9 @@ document.addEventListener('DOMContentLoaded', () => {
   initScreenValidationForm();
   initQualityTeamManagement();
   initScrapScreens();
+  if (typeof window.initModelSearchView === 'function') {
+    window.initModelSearchView();
+  }
   updateSummaryMetrics();
 });
 
@@ -9624,6 +9627,18 @@ function isSafeHttpUrl(url) {
   return /^https?:\/\//i.test(String(url || '').trim());
 }
 
+function findBestModelSearchMatch(query) {
+  if (!query || !modelSearchPayload || !Array.isArray(modelSearchPayload.modelList)) return '';
+  if (modelSearchPayload.models?.[query]) return query;
+  const startsWith = modelSearchPayload.modelList.filter(m => m.startsWith(query));
+  if (startsWith.length === 1) return startsWith[0];
+  const includes = modelSearchPayload.modelList.filter(m => m.includes(query));
+  if (includes.length === 1) return includes[0];
+  if (query.length >= 4 && startsWith.length > 0) return startsWith[0];
+  if (query.length >= 4 && includes.length > 0) return includes[0];
+  return '';
+}
+
 window.initModelSearchView = function() {
   if (!modelSearchInitialized) {
     modelSearchInitialized = true;
@@ -9632,32 +9647,35 @@ window.initModelSearchView = function() {
     const specVerFilter = document.getElementById('modelSearchSpecVersionFilter');
     const specTextFilter = document.getElementById('modelSearchSpecTextFilter');
 
+    const handleInstantModelInput = () => {
+      if (!input) return;
+      const query = input.value.trim().toUpperCase();
+      if (clearBtn) clearBtn.classList.toggle('hidden', !query);
+      renderModelSearchSuggestions(query);
+      if (!query) {
+        modelSearchSelectedKey = '';
+        document.getElementById('modelSearchResults')?.classList.add('hidden');
+        document.getElementById('modelSearchEmptyState')?.classList.remove('hidden');
+        return;
+      }
+      const bestMatch = findBestModelSearchMatch(query);
+      if (bestMatch) {
+        selectModelSearchResult(bestMatch);
+      }
+    };
+
     if (input) {
-      input.addEventListener('input', () => {
-        const query = input.value.trim().toUpperCase();
-        if (clearBtn) clearBtn.classList.toggle('hidden', !query);
-        renderModelSearchSuggestions(query);
-        if (modelSearchPayload?.models?.[query]) {
-          selectModelSearchResult(query);
-        } else if (!query) {
-          modelSearchSelectedKey = '';
-          document.getElementById('modelSearchResults')?.classList.add('hidden');
-          document.getElementById('modelSearchEmptyState')?.classList.remove('hidden');
-        }
-      });
+      input.addEventListener('input', handleInstantModelInput);
+      input.addEventListener('change', handleInstantModelInput);
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
           const query = input.value.trim().toUpperCase();
           if (!query || !modelSearchPayload) return;
-          if (modelSearchPayload.models[query]) {
-            selectModelSearchResult(query);
-            return;
-          }
-          const firstMatch = modelSearchPayload.modelList.find(m => m.includes(query));
-          if (firstMatch) {
-            input.value = firstMatch;
-            selectModelSearchResult(firstMatch);
+          const bestMatch = findBestModelSearchMatch(query) || modelSearchPayload.modelList.find(m => m.includes(query));
+          if (bestMatch) {
+            input.value = bestMatch;
+            selectModelSearchResult(bestMatch);
           } else {
             showToast(`No se encontró ningún modelo que coincida con "${query}".`);
           }
@@ -9686,13 +9704,65 @@ window.initModelSearchView = function() {
   }
 };
 
+const MODEL_SEARCH_STORAGE_KEY = 'calidad_planta5_model_search_cache_v1';
+
+function applyModelSearchPayloadToUi(data) {
+  if (!data || !data.models) return;
+  modelSearchPayload = data;
+
+  const statusBadge = document.getElementById('modelSearchStatusBadge');
+  const warningBox = document.getElementById('modelSearchWarning');
+  const countsHint = document.getElementById('modelSearchCountsHint');
+  const datalist = document.getElementById('modelSearchDatalist');
+
+  if (datalist) {
+    datalist.innerHTML = data.modelList.map(m => `<option value="${escapeAuditReportText(m)}"></option>`).join('');
+  }
+  if (statusBadge) {
+    statusBadge.textContent = `${data.counts?.totalModels || data.modelList.length} modelos`;
+  }
+  if (countsHint) {
+    countsHint.textContent = `Índice listo: ${data.counts?.certRows || 0} en Certificados (RG-0612) · ${data.counts?.bomModels || 0} en Lista BOM · ${data.counts?.specRows || 0} ítems de Especificaciones.`;
+  }
+  if (warningBox) {
+    if (Array.isArray(data.warnings) && data.warnings.length > 0) {
+      warningBox.innerHTML = data.warnings.map(w => `<div>⚠️ ${escapeAuditReportText(w)}</div>`).join('');
+      warningBox.classList.remove('hidden');
+    } else {
+      warningBox.classList.add('hidden');
+      warningBox.innerHTML = '';
+    }
+  }
+
+  const curQuery = (document.getElementById('modelSearchInput')?.value || '').trim().toUpperCase();
+  renderModelSearchSuggestions(curQuery);
+  if (modelSearchSelectedKey && data.models[modelSearchSelectedKey]) {
+    selectModelSearchResult(modelSearchSelectedKey);
+  } else if (curQuery) {
+    const match = findBestModelSearchMatch(curQuery);
+    if (match) selectModelSearchResult(match);
+  }
+}
+
 window.loadModelSearchData = async function(forceRefresh = false) {
   const statusBadge = document.getElementById('modelSearchStatusBadge');
   const refreshBtn = document.getElementById('modelSearchRefreshBtn');
-  const warningBox = document.getElementById('modelSearchWarning');
-  const countsHint = document.getElementById('modelSearchCountsHint');
 
-  if (statusBadge) statusBadge.textContent = forceRefresh ? 'Actualizando...' : 'Cargando...';
+  if (!forceRefresh && !modelSearchPayload) {
+    try {
+      const rawCached = localStorage.getItem(MODEL_SEARCH_STORAGE_KEY);
+      if (rawCached) {
+        const cachedData = JSON.parse(rawCached);
+        if (cachedData && cachedData.models && Array.isArray(cachedData.modelList)) {
+          applyModelSearchPayloadToUi(cachedData);
+        }
+      }
+    } catch (_) {}
+  }
+
+  if (statusBadge && (!modelSearchPayload || forceRefresh)) {
+    statusBadge.textContent = forceRefresh ? 'Actualizando...' : 'Cargando...';
+  }
   if (refreshBtn) refreshBtn.disabled = true;
 
   try {
@@ -9701,40 +9771,16 @@ window.loadModelSearchData = async function(forceRefresh = false) {
     const data = await res.json();
     if (!data.success || !data.models) throw new Error('Formato inválido');
 
-    modelSearchPayload = data;
-
-    const datalist = document.getElementById('modelSearchDatalist');
-    if (datalist) {
-      datalist.innerHTML = data.modelList.map(m => `<option value="${escapeAuditReportText(m)}"></option>`).join('');
-    }
-
-    if (statusBadge) {
-      statusBadge.textContent = `${data.counts?.totalModels || data.modelList.length} modelos`;
-    }
-    if (countsHint) {
-      countsHint.textContent = `Índice listo: ${data.counts?.certRows || 0} en Certificados (RG-0612) · ${data.counts?.bomModels || 0} en Lista BOM · ${data.counts?.specRows || 0} ítems de Especificaciones.`;
-    }
-    if (warningBox) {
-      if (Array.isArray(data.warnings) && data.warnings.length > 0) {
-        warningBox.innerHTML = data.warnings.map(w => `<div>⚠️ ${escapeAuditReportText(w)}</div>`).join('');
-        warningBox.classList.remove('hidden');
-      } else {
-        warningBox.classList.add('hidden');
-        warningBox.innerHTML = '';
-      }
-    }
-
-    const curQuery = (document.getElementById('modelSearchInput')?.value || '').trim().toUpperCase();
-    renderModelSearchSuggestions(curQuery);
-    if (modelSearchSelectedKey && data.models[modelSearchSelectedKey]) {
-      selectModelSearchResult(modelSearchSelectedKey);
-    } else if (curQuery && data.models[curQuery]) {
-      selectModelSearchResult(curQuery);
-    }
+    applyModelSearchPayloadToUi(data);
+    try {
+      localStorage.setItem(MODEL_SEARCH_STORAGE_KEY, JSON.stringify(data));
+    } catch (_) {}
   } catch (err) {
     console.error('Error cargando Buscador por Modelo:', err);
-    if (statusBadge) statusBadge.textContent = 'Error al cargar';
-    showToast('No se pudieron cargar las planillas de modelos.');
+    if (!modelSearchPayload && statusBadge) statusBadge.textContent = 'Error al cargar';
+    if (forceRefresh || !modelSearchPayload) {
+      showToast('No se pudieron cargar las planillas de modelos.');
+    }
   } finally {
     if (refreshBtn) refreshBtn.disabled = false;
   }
