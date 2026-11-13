@@ -5379,6 +5379,7 @@ function switchView(viewName) {
   const titles = {
     'dashboard': 'Dashboard Principal (Portada)',
     'equipo': 'Equipo de Calidad · Planta 5',
+    'buscador-modelo': 'Buscador por Modelo · Planta 5',
     'formularios': 'Formularios & Checklists Operativos',
     'auditorias': 'Auditorías de Línea & Celdas TV',
     'audit-torque': 'Auditoría · Control de Torque (Planta 5)',
@@ -5442,6 +5443,9 @@ function switchView(viewName) {
     } else {
       renderTvEventsDashboard();
     }
+  }
+  if (viewName === 'buscador-modelo' && typeof window.initModelSearchView === 'function') {
+    window.initModelSearchView();
   }
   if (viewName === 'validacion-pantallas') loadScreenValidationRecords();
   if (viewName === 'usuarios') renderServerUserManagement();
@@ -9608,6 +9612,282 @@ window.deleteScreenValidationRecord = async function(id) {
   }
 };
 
+
+// ==========================================
+// 19B. BUSCADOR POR MODELO (BOM, CERTIFICADOS RG-0612, ESPECIFICACIONES)
+// ==========================================
+let modelSearchPayload = null;
+let modelSearchSelectedKey = '';
+let modelSearchInitialized = false;
+
+function isSafeHttpUrl(url) {
+  return /^https?:\/\//i.test(String(url || '').trim());
+}
+
+window.initModelSearchView = function() {
+  if (!modelSearchInitialized) {
+    modelSearchInitialized = true;
+    const input = document.getElementById('modelSearchInput');
+    const clearBtn = document.getElementById('modelSearchClearBtn');
+    const specVerFilter = document.getElementById('modelSearchSpecVersionFilter');
+    const specTextFilter = document.getElementById('modelSearchSpecTextFilter');
+
+    if (input) {
+      input.addEventListener('input', () => {
+        const query = input.value.trim().toUpperCase();
+        if (clearBtn) clearBtn.classList.toggle('hidden', !query);
+        renderModelSearchSuggestions(query);
+        if (modelSearchPayload?.models?.[query]) {
+          selectModelSearchResult(query);
+        } else if (!query) {
+          modelSearchSelectedKey = '';
+          document.getElementById('modelSearchResults')?.classList.add('hidden');
+          document.getElementById('modelSearchEmptyState')?.classList.remove('hidden');
+        }
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const query = input.value.trim().toUpperCase();
+          if (!query || !modelSearchPayload) return;
+          if (modelSearchPayload.models[query]) {
+            selectModelSearchResult(query);
+            return;
+          }
+          const firstMatch = modelSearchPayload.modelList.find(m => m.includes(query));
+          if (firstMatch) {
+            input.value = firstMatch;
+            selectModelSearchResult(firstMatch);
+          } else {
+            showToast(`No se encontró ningún modelo que coincida con "${query}".`);
+          }
+        }
+      });
+    }
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        if (input) input.value = '';
+        clearBtn.classList.add('hidden');
+        modelSearchSelectedKey = '';
+        renderModelSearchSuggestions('');
+        document.getElementById('modelSearchResults')?.classList.add('hidden');
+        document.getElementById('modelSearchEmptyState')?.classList.remove('hidden');
+        input?.focus();
+      });
+    }
+
+    specVerFilter?.addEventListener('change', () => renderModelSearchSpecifications());
+    specTextFilter?.addEventListener('input', () => renderModelSearchSpecifications());
+  }
+
+  if (!modelSearchPayload) {
+    window.loadModelSearchData(false);
+  }
+};
+
+window.loadModelSearchData = async function(forceRefresh = false) {
+  const statusBadge = document.getElementById('modelSearchStatusBadge');
+  const refreshBtn = document.getElementById('modelSearchRefreshBtn');
+  const warningBox = document.getElementById('modelSearchWarning');
+  const countsHint = document.getElementById('modelSearchCountsHint');
+
+  if (statusBadge) statusBadge.textContent = forceRefresh ? 'Actualizando...' : 'Cargando...';
+  if (refreshBtn) refreshBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/model-search' + (forceRefresh ? '?refresh=1' : ''), { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.success || !data.models) throw new Error('Formato inválido');
+
+    modelSearchPayload = data;
+
+    const datalist = document.getElementById('modelSearchDatalist');
+    if (datalist) {
+      datalist.innerHTML = data.modelList.map(m => `<option value="${escapeAuditReportText(m)}"></option>`).join('');
+    }
+
+    if (statusBadge) {
+      statusBadge.textContent = `${data.counts?.totalModels || data.modelList.length} modelos`;
+    }
+    if (countsHint) {
+      countsHint.textContent = `Índice listo: ${data.counts?.certRows || 0} en Certificados (RG-0612) · ${data.counts?.bomModels || 0} en Lista BOM · ${data.counts?.specRows || 0} ítems de Especificaciones.`;
+    }
+    if (warningBox) {
+      if (Array.isArray(data.warnings) && data.warnings.length > 0) {
+        warningBox.innerHTML = data.warnings.map(w => `<div>⚠️ ${escapeAuditReportText(w)}</div>`).join('');
+        warningBox.classList.remove('hidden');
+      } else {
+        warningBox.classList.add('hidden');
+        warningBox.innerHTML = '';
+      }
+    }
+
+    const curQuery = (document.getElementById('modelSearchInput')?.value || '').trim().toUpperCase();
+    renderModelSearchSuggestions(curQuery);
+    if (modelSearchSelectedKey && data.models[modelSearchSelectedKey]) {
+      selectModelSearchResult(modelSearchSelectedKey);
+    } else if (curQuery && data.models[curQuery]) {
+      selectModelSearchResult(curQuery);
+    }
+  } catch (err) {
+    console.error('Error cargando Buscador por Modelo:', err);
+    if (statusBadge) statusBadge.textContent = 'Error al cargar';
+    showToast('No se pudieron cargar las planillas de modelos.');
+  } finally {
+    if (refreshBtn) refreshBtn.disabled = false;
+  }
+};
+
+function renderModelSearchSuggestions(query) {
+  const container = document.getElementById('modelSearchSuggestions');
+  if (!container || !modelSearchPayload) return;
+  if (!query) {
+    container.innerHTML = '';
+    return;
+  }
+  const matches = modelSearchPayload.modelList.filter(m => m.includes(query)).slice(0, 12);
+  if (!matches.length) {
+    container.innerHTML = '<span class="text-[11px] text-slate-400">Sin coincidencias para ese código.</span>';
+    return;
+  }
+  container.replaceChildren();
+  matches.forEach(modelKey => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    const isActive = modelKey === modelSearchSelectedKey;
+    btn.className = `px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer ${
+      isActive
+        ? 'border-red-300 bg-red-50 text-red-700'
+        : 'border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50/40'
+    }`;
+    btn.textContent = modelKey;
+    btn.addEventListener('click', () => {
+      const input = document.getElementById('modelSearchInput');
+      if (input) input.value = modelKey;
+      selectModelSearchResult(modelKey);
+    });
+    container.appendChild(btn);
+  });
+}
+
+function selectModelSearchResult(modelKey) {
+  const entry = modelSearchPayload?.models?.[modelKey];
+  if (!entry) return;
+  modelSearchSelectedKey = modelKey;
+
+  document.getElementById('modelSearchEmptyState')?.classList.add('hidden');
+  document.getElementById('modelSearchResults')?.classList.remove('hidden');
+  const titleEl = document.getElementById('modelSearchSelectedTitle');
+  if (titleEl) titleEl.textContent = entry.model;
+
+  // 1. Certificados RG-0612
+  const cert = entry.certificates[0] || null;
+  const pillsEl = document.getElementById('modelSearchMetaPills');
+  if (pillsEl) {
+    const pills = [];
+    if (cert?.brand) pills.push(`<span class="rounded-full bg-white border border-slate-200 px-3 py-1 text-xs font-bold text-slate-700">Marca: ${escapeAuditReportText(cert.brand)}</span>`);
+    if (cert?.chassis) pills.push(`<span class="rounded-full bg-white border border-slate-200 px-3 py-1 text-xs font-bold text-slate-700">Chasis: ${escapeAuditReportText(cert.chassis)}</span>`);
+    if (cert?.condition) {
+      const isVig = cert.condition.toLowerCase().includes('vigente');
+      pills.push(`<span class="rounded-full px-3 py-1 text-xs font-extrabold border ${isVig ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-800'}">${escapeAuditReportText(cert.condition)}</span>`);
+    }
+    pillsEl.innerHTML = pills.join('') || '<span class="text-xs text-slate-400">Sin registro en RG-0612</span>';
+  }
+
+  const certLinksEl = document.getElementById('modelSearchCertLinks');
+  if (certLinksEl) {
+    const renderDocTile = (label, value, accentClass) => {
+      const trimmed = String(value || '').trim();
+      if (isSafeHttpUrl(trimmed)) {
+      const urls = trimmed.match(/https?:\/\/[^\s,;]+/gi) || [];
+      if (urls.length === 1) return `<a href="${escapeAuditReportText(urls[0])}" target="_blank" rel="noopener noreferrer" class="flex items-center justify-between gap-2 rounded-xl border bg-white px-3.5 py-3 text-xs font-bold shadow-2xs transition hover:shadow-sm ${accentClass}"><span>${escapeAuditReportText(label)}</span><span class="text-[11px] font-extrabold">Abrir ↗</span></a>`;
+      if (urls.length > 1) return `<div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-xs font-bold text-slate-800"><span>${escapeAuditReportText(label)}</span><div class="flex flex-wrap gap-1.5">${urls.map((u, idx) => `<a href="${escapeAuditReportText(u)}" target="_blank" rel="noopener noreferrer" class="rounded-lg border px-2 py-1 text-[11px] font-extrabold bg-white hover:opacity-80 ${accentClass}">Abrir ${idx + 1} ↗</a>`).join('')}</div></div>`;
+      }
+      return `<div class="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white/70 px-3.5 py-3 text-xs text-slate-500"><span class="font-semibold">${escapeAuditReportText(label)}</span><span class="text-[11px] font-medium">${escapeAuditReportText(trimmed || 'No cargado')}</span></div>`;
+    };
+    certLinksEl.innerHTML = [
+      renderDocTile('Certificado CB / CDF', cert?.cbUrl, 'border-sky-200 text-sky-800 hover:bg-sky-50'),
+      renderDocTile('Críticos (Q.A)', cert?.criticosUrl, 'border-amber-200 text-amber-800 hover:bg-amber-50'),
+      renderDocTile('DDJJ', cert?.ddjjUrl, 'border-emerald-200 text-emerald-800 hover:bg-emerald-50')
+    ].join('');
+  }
+
+  // 2. Lista BOM por Versiones
+  const bomCountEl = document.getElementById('modelSearchBomCount');
+  const bomContainer = document.getElementById('modelSearchBomVersions');
+  if (bomCountEl) bomCountEl.textContent = `${entry.bomVersions.length} versión(es)`;
+  if (bomContainer) {
+    if (!entry.bomVersions.length) {
+      bomContainer.innerHTML = '<span class="text-xs text-slate-400">Sin versiones de Lista BOM cargadas para este modelo.</span>';
+    } else {
+      bomContainer.innerHTML = entry.bomVersions.map(v => {
+        if (isSafeHttpUrl(v.url)) {
+          return `<a href="${escapeAuditReportText(v.url)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/70 px-3.5 py-2 text-xs font-extrabold text-indigo-800 hover:bg-indigo-100 transition"><span>${escapeAuditReportText(v.version)}</span><span class="text-[10px]">Abrir BOM ↗</span></a>`;
+        }
+        return `<span class="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">${escapeAuditReportText(v.version)}: ${escapeAuditReportText(v.url)}</span>`;
+      }).join('');
+    }
+  }
+
+  // 3. Especificaciones
+  const specVerSelect = document.getElementById('modelSearchSpecVersionFilter');
+  const specTextInput = document.getElementById('modelSearchSpecTextFilter');
+  if (specTextInput) specTextInput.value = '';
+  if (specVerSelect) {
+    const uniqueVersions = Array.from(new Set(entry.specifications.map(s => s.version).filter(Boolean)));
+    specVerSelect.innerHTML = '<option value="">Todas las versiones</option>' +
+      uniqueVersions.map(v => `<option value="${escapeAuditReportText(v)}">${escapeAuditReportText(v)}</option>`).join('');
+  }
+  renderModelSearchSpecifications();
+  renderModelSearchSuggestions((document.getElementById('modelSearchInput')?.value || '').trim().toUpperCase());
+}
+
+function renderModelSearchSpecifications() {
+  const tbody = document.getElementById('modelSearchSpecTableBody');
+  const countEl = document.getElementById('modelSearchSpecCount');
+  const verFilter = document.getElementById('modelSearchSpecVersionFilter')?.value || '';
+  const textFilter = (document.getElementById('modelSearchSpecTextFilter')?.value || '').trim().toLowerCase();
+  const entry = modelSearchPayload?.models?.[modelSearchSelectedKey];
+  if (!tbody || !entry) return;
+
+  const filtered = entry.specifications.filter(s => {
+    if (verFilter && s.version !== verFilter) return false;
+    if (textFilter) {
+      const hay = `${s.material} ${s.partNumber} ${s.description}`.toLowerCase();
+      if (!hay.includes(textFilter)) return false;
+    }
+    return true;
+  });
+
+  if (countEl) countEl.textContent = `${filtered.length} ítem(s)`;
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-xs text-slate-400">No hay especificaciones cargadas para este filtro.</td></tr>';
+    return;
+  }
+
+  const renderLinkCell = (val, label) => {
+    const trimmed = String(val || '').trim();
+    if (isSafeHttpUrl(trimmed)) {
+      return `<a href="${escapeAuditReportText(trimmed)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700 hover:bg-sky-100 transition">${label} ↗</a>`;
+    }
+    return `<span class="text-[11px] text-slate-400">${escapeAuditReportText(trimmed || '—')}</span>`;
+  };
+
+  tbody.innerHTML = filtered.map(s => `
+    <tr class="hover:bg-slate-50/80">
+      <td class="px-3 py-2.5 font-bold text-slate-800 whitespace-nowrap">${escapeAuditReportText(s.material || '—')}</td>
+      <td class="px-3 py-2.5">
+        <div class="font-mono font-bold text-slate-900">${escapeAuditReportText(s.partNumber || '—')}</div>
+        ${s.description ? `<div class="text-[10.5px] text-slate-500 mt-0.5">${escapeAuditReportText(s.description)}</div>` : ''}
+      </td>
+      <td class="px-3 py-2.5 font-bold text-slate-700 whitespace-nowrap">${escapeAuditReportText(s.version || '—')}</td>
+      <td class="px-3 py-2.5 whitespace-nowrap">${renderLinkCell(s.specArteUrl, 'Spec Arte')}</td>
+      <td class="px-3 py-2.5 whitespace-nowrap">${renderLinkCell(s.specPlanoUrl, 'Spec Plano')}</td>
+    </tr>
+  `).join('');
+}
 
 // ==========================================
 // ASIGNACIÓN DE LÍNEAS A AUDITORES

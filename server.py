@@ -113,6 +113,11 @@ AUDIT_SHEETS_CONFIG = {
     }
 }
 AUDIT_SHEETS_CACHE_TTL_SECONDS = 15
+MODEL_SEARCH_BOM_CSV_URL = 'https://docs.google.com/spreadsheets/d/1c1VBZkx5XPPfcltxgOO2g2E7GKR7tgmy0xX3L67LQ34/export?format=csv&gid=13176987'
+MODEL_SEARCH_CERT_CSV_URL = 'https://docs.google.com/spreadsheets/d/1Po2A4T_9hW8rFi2huMiCzH9Sh7cayHBEa6SNMmJtGAw/export?format=csv&gid=1460550420'
+MODEL_SEARCH_SPEC_CSV_URL = 'https://docs.google.com/spreadsheets/d/1c1VBZkx5XPPfcltxgOO2g2E7GKR7tgmy0xX3L67LQ34/export?format=csv&gid=853792234'
+MODEL_SEARCH_CACHE_LOCK = threading.Lock()
+MODEL_SEARCH_CACHE = {'payload_bytes': None, 'loaded_at': 0.0}
 AUDIT_SHEETS_CACHE_LOCK = threading.Lock()
 AUDIT_SHEETS_REFRESH_LOCK = threading.Lock()
 AUDIT_SHEETS_REFRESHING = threading.Event()
@@ -1198,6 +1203,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
         if path == '/api/audits/sheets-data':
             self.send_audit_sheets_data()
+            return
+        if path == '/api/model-search':
+            if not self.get_authenticated_user():
+                return
+            self.send_model_search_data()
             return
         if path == '/api/audits/not-applicable':
             if not self.get_authenticated_user():
@@ -2404,6 +2414,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except Exception as error:
             self.send_error(502, f'No se pudieron cargar los datos de auditorías de Google Sheets: {error}')
 
+    def send_model_search_data(self):
+        try:
+            parameters = parse_qs(urlparse(self.path).query)
+            force_refresh = parameters.get('refresh', [''])[0] == '1'
+            payload = get_model_search_payload(force_refresh=force_refresh)
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Content-Length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        except Exception as error:
+            self.send_error(502, f'No se pudieron cargar los datos de Buscador por Modelo: {error}')
+
     def send_scrap_screens_data(self):
         try:
             parameters = parse_qs(urlparse(self.path).query)
@@ -3133,6 +3156,166 @@ def refresh_audit_sheets_in_background():
         name='audit-sheets-refresh',
         daemon=True
     ).start()
+
+
+def _download_csv_rows_optional(url):
+    request = urllib.request.Request(
+        url,
+        headers={'User-Agent': 'CalidadSuitePlanta5/1.0'}
+    )
+    with urllib.request.urlopen(request, timeout=25) as response:
+        content = response.read().decode('utf-8-sig', errors='replace')
+    return list(csv.reader(io.StringIO(content, newline='')))
+
+
+def _build_model_search_payload():
+    sources = {
+        'bom': MODEL_SEARCH_BOM_CSV_URL,
+        'cert': MODEL_SEARCH_CERT_CSV_URL,
+        'spec': MODEL_SEARCH_SPEC_CSV_URL
+    }
+    raw_rows = {}
+    warnings = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {key: executor.submit(_download_csv_rows_optional, url) for key, url in sources.items()}
+        for key, future in futures.items():
+            try:
+                raw_rows[key] = future.result()
+            except urllib.error.HTTPError as err:
+                raw_rows[key] = []
+                if key in ('bom', 'spec'):
+                    warnings.append(
+                        f'La planilla Matriz IQC ({key.upper()}) devolvió HTTP {err.code}. '
+                        'Verificá que esté compartida como "Cualquier persona con el vínculo (Lector)".'
+                    )
+                else:
+                    warnings.append(f'No se pudo leer RG-0612 Certificados (HTTP {err.code}).')
+            except Exception as err:
+                raw_rows[key] = []
+                warnings.append(f'Error al leer fuente {key.upper()}: {err}')
+
+    models = {}
+
+    def ensure_model(raw_name):
+        key = str(raw_name or '').strip().upper()
+        if not key:
+            return None
+        if key not in models:
+            models[key] = {
+                'model': key,
+                'bomVersions': [],
+                'certificates': [],
+                'specifications': []
+            }
+        return models[key]
+
+    # 1. Lista BOM: Col A = Modelo, Col B.. = Versiones (V1, V2, ...)
+    bom_rows = raw_rows.get('bom', [])
+    bom_models_count = 0
+    if bom_rows:
+        bom_headers = [str(c or '').strip() for c in bom_rows[0]]
+        for row in bom_rows[1:]:
+            if not row or not str(row[0] or '').strip():
+                continue
+            entry = ensure_model(row[0])
+            if not entry:
+                continue
+            versions = []
+            for idx in range(1, len(row)):
+                val = str(row[idx] or '').strip()
+                if not val:
+                    continue
+                ver_label = bom_headers[idx] if idx < len(bom_headers) and bom_headers[idx] else f'V{idx}'
+                versions.append({'version': ver_label, 'url': val})
+            if versions:
+                entry['bomVersions'].extend(versions)
+                bom_models_count += 1
+
+    # 2. Certificados RG-0612: Col A=Modelo, B=Condicion, C=CB URL, L=Marca, M=Chasis, U=Criticos URL, W=DDJJ URL
+    cert_rows = raw_rows.get('cert', [])
+    cert_models_count = 0
+    if cert_rows:
+        start_idx = 0
+        for idx, row in enumerate(cert_rows[:12]):
+            if row and str(row[0] or '').strip().casefold() == 'modelo':
+                start_idx = idx + 1
+                break
+        if start_idx == 0 and len(cert_rows) > 4:
+            start_idx = 4
+        for row in cert_rows[start_idx:]:
+            if not row or not str(row[0] or '').strip():
+                continue
+            model_raw = str(row[0] or '').strip()
+            if model_raw.casefold() == 'modelo':
+                continue
+            entry = ensure_model(model_raw)
+            if not entry:
+                continue
+            entry['certificates'].append({
+                'condition': str(row[1] if len(row) > 1 else '').strip(),
+                'cbUrl': str(row[2] if len(row) > 2 else '').strip(),
+                'brand': str(row[11] if len(row) > 11 else '').strip(),
+                'chassis': str(row[12] if len(row) > 12 else '').strip(),
+                'criticosUrl': str(row[20] if len(row) > 20 else '').strip(),
+                'ddjjUrl': str(row[22] if len(row) > 22 else '').strip()
+            })
+            cert_models_count += 1
+
+    # 3. Especificaciones (Prueba): Col B=Modelo, C=Material, D=Part Number, E=Descripcion, F=Version, G=Spec Arte, H=Spec Plano
+    spec_rows = raw_rows.get('spec', [])
+    spec_rows_count = 0
+    if spec_rows:
+        start_idx = 1
+        if str(spec_rows[0][1] if len(spec_rows[0]) > 1 else '').strip().casefold() != 'modelo':
+            for idx, row in enumerate(spec_rows[:10]):
+                if len(row) > 1 and str(row[1] or '').strip().casefold() == 'modelo':
+                    start_idx = idx + 1
+                    break
+        for row in spec_rows[start_idx:]:
+            if len(row) < 3 or not str(row[1] or '').strip():
+                continue
+            entry = ensure_model(row[1])
+            if not entry:
+                continue
+            entry['specifications'].append({
+                'material': str(row[2] if len(row) > 2 else '').strip(),
+                'partNumber': str(row[3] if len(row) > 3 else '').strip(),
+                'description': str(row[4] if len(row) > 4 else '').strip(),
+                'version': str(row[5] if len(row) > 5 else '').strip(),
+                'specArteUrl': str(row[6] if len(row) > 6 else '').strip(),
+                'specPlanoUrl': str(row[7] if len(row) > 7 else '').strip()
+            })
+            spec_rows_count += 1
+
+    loaded_at = int(time.time())
+    payload_bytes = json.dumps({
+        'success': True,
+        'fetchedAt': loaded_at,
+        'models': models,
+        'modelList': sorted(models.keys()),
+        'counts': {
+            'totalModels': len(models),
+            'bomModels': bom_models_count,
+            'certRows': cert_models_count,
+            'specRows': spec_rows_count
+        },
+        'warnings': warnings
+    }, ensure_ascii=False).encode('utf-8')
+    return loaded_at, payload_bytes
+
+
+def get_model_search_payload(force_refresh=False):
+    if not force_refresh:
+        with MODEL_SEARCH_CACHE_LOCK:
+            payload_bytes = MODEL_SEARCH_CACHE.get('payload_bytes')
+            cache_age = time.time() - MODEL_SEARCH_CACHE['loaded_at']
+        if payload_bytes is not None and cache_age < SCRAP_SCREENS_CACHE_TTL_SECONDS:
+            return payload_bytes
+    loaded_at, payload_bytes = _build_model_search_payload()
+    with MODEL_SEARCH_CACHE_LOCK:
+        MODEL_SEARCH_CACHE['payload_bytes'] = payload_bytes
+        MODEL_SEARCH_CACHE['loaded_at'] = float(loaded_at)
+    return payload_bytes
 
 
 def get_audit_sheets_payload(force_refresh=False):

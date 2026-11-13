@@ -152,6 +152,10 @@
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
               <span>Equipo de Calidad</span>
             </button>
+            <button class="nav-pill" data-view="buscador-modelo">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              <span>Buscador por Modelo</span>
+            </button>
           </nav>
         </div>
 
@@ -2597,6 +2601,103 @@
           </div>
         </div>
 
+        <!-- 14. VISTA: BUSCADOR POR MODELO -->
+        <div id="view-buscador-modelo" class="view-container hidden space-y-6">
+          <div class="bg-white rounded-2xl border border-slate-200/80 p-5 sm:p-6 shadow-xs space-y-5">
+            <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 pb-4">
+              <div class="flex items-center gap-3">
+                <div class="w-11 h-11 rounded-2xl bg-red-50 border border-red-100 text-red-600 flex items-center justify-center shrink-0">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                </div>
+                <div>
+                  <h2 class="text-base font-extrabold text-slate-900 tracking-tight">Buscador por Modelo</h2>
+                  <p class="text-xs text-slate-500 mt-0.5">Lista BOM por versión, Certificados / RG-0612 y Especificaciones de materiales.</p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                <span id="modelSearchStatusBadge" class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-bold text-slate-600">Listo</span>
+                <button id="modelSearchRefreshBtn" type="button" onclick="window.loadModelSearchData(true)" class="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition shadow-2xs cursor-pointer">
+                  Actualizar
+                </button>
+              </div>
+            </div>
+
+            <div class="space-y-3">
+              <div class="relative">
+                <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                <input id="modelSearchInput" list="modelSearchDatalist" type="text" autocomplete="off" placeholder="Escribí el código de modelo (ej.: 9150NU855BPSA, 9132A42H, 9140A4NV...)" class="w-full rounded-xl border border-slate-200 bg-slate-50/70 pl-10 pr-24 py-3 text-sm font-semibold text-slate-900 uppercase placeholder:normal-case placeholder:font-normal focus:border-red-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-100">
+                <button id="modelSearchClearBtn" type="button" class="hidden absolute right-2.5 top-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-600 hover:bg-slate-50 cursor-pointer">Limpiar</button>
+                <datalist id="modelSearchDatalist"></datalist>
+              </div>
+              <div id="modelSearchSuggestions" class="flex flex-wrap gap-1.5"></div>
+            </div>
+
+            <div id="modelSearchWarning" class="hidden rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-xs text-amber-900 space-y-1"></div>
+
+            <div id="modelSearchEmptyState" class="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-8 text-center">
+              <p class="text-sm font-bold text-slate-700">Ingresá un modelo para consultar su documentación</p>
+              <p id="modelSearchCountsHint" class="mt-1 text-xs text-slate-500">Cargando índice de modelos...</p>
+            </div>
+
+            <div id="modelSearchResults" class="hidden space-y-5">
+              <!-- Resumen & Certificados RG-0612 -->
+              <section class="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 sm:p-5 space-y-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <span class="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Certificados y RG-0612</span>
+                    <h3 id="modelSearchSelectedTitle" class="text-lg font-black text-slate-900 tracking-tight">—</h3>
+                  </div>
+                  <div id="modelSearchMetaPills" class="flex flex-wrap items-center gap-2"></div>
+                </div>
+                <div id="modelSearchCertLinks" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
+              </section>
+
+              <!-- Lista BOM por Versiones -->
+              <section class="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 space-y-3">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-800">Lista BOM por Versión</h4>
+                    <p class="text-[11px] text-slate-500">Versiones disponibles en Matriz IQC (Lista Bom).</p>
+                  </div>
+                  <span id="modelSearchBomCount" class="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-bold text-slate-600">0 versiones</span>
+                </div>
+                <div id="modelSearchBomVersions" class="flex flex-wrap gap-2"></div>
+              </section>
+
+              <!-- Especificaciones -->
+              <section class="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 space-y-3">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-800">Especificaciones de Materiales</h4>
+                    <p class="text-[11px] text-slate-500">Material, Part Number, Versión, Spec Arte y Spec Plano.</p>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <select id="modelSearchSpecVersionFilter" class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 focus:border-red-400 focus:outline-none">
+                      <option value="">Todas las versiones</option>
+                    </select>
+                    <input id="modelSearchSpecTextFilter" type="text" placeholder="Filtrar material o P/N..." class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700 focus:border-red-400 focus:bg-white focus:outline-none">
+                    <span id="modelSearchSpecCount" class="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-bold text-slate-600">0 ítems</span>
+                  </div>
+                </div>
+                <div class="max-h-96 overflow-auto rounded-xl border border-slate-100">
+                  <table class="w-full min-w-[680px] text-left text-xs">
+                    <thead class="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 border-b border-slate-100">
+                      <tr>
+                        <th class="px-3 py-2.5 font-bold">Material</th>
+                        <th class="px-3 py-2.5 font-bold">Part Number / Descripción</th>
+                        <th class="px-3 py-2.5 font-bold">Versión</th>
+                        <th class="px-3 py-2.5 font-bold">Spec Arte</th>
+                        <th class="px-3 py-2.5 font-bold">Spec Plano</th>
+                      </tr>
+                    </thead>
+                    <tbody id="modelSearchSpecTableBody" class="divide-y divide-slate-100 bg-white"></tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+
       </main>
 
     </div>
@@ -2879,7 +2980,7 @@
   </div>
 
   <!-- Scripts -->
-  <script src="app.js?v=20261112-admin-only-contacts"></script>
+  <script src="app.js?v=20261112-buscador-modelo"></script>
 
   <!-- MODAL: VISOR CARRUSEL DE FOTOS DE EVENTOS TV -->
   <div id="tvPhotoCarouselModal" class="fixed inset-0 z-[100] hidden items-center justify-center bg-slate-950/85 p-3 sm:p-6 backdrop-blur-sm" onclick="if(event.target===this) window.closeTvPhotoCarousel()">
