@@ -9798,15 +9798,19 @@ function renderModelSearchSuggestions(query) {
     container.innerHTML = '<span class="text-[11px] text-slate-400">Sin coincidencias para ese código.</span>';
     return;
   }
+  if (matches.length === 1 && matches[0] === modelSearchSelectedKey) {
+    container.innerHTML = '';
+    return;
+  }
   container.replaceChildren();
   matches.forEach(modelKey => {
     const btn = document.createElement('button');
     btn.type = 'button';
     const isActive = modelKey === modelSearchSelectedKey;
-    btn.className = `px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer ${
+    btn.className = `px-2.5 py-1 rounded-lg border font-mono text-[10.5px] font-bold transition cursor-pointer ${
       isActive
-        ? 'border-red-300 bg-red-50 text-red-700'
-        : 'border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:bg-red-50/40'
+        ? 'border-red-200 bg-red-50 text-red-700'
+        : 'border-slate-200 bg-white text-slate-600 hover:border-red-200 hover:bg-red-50/50 hover:text-red-700'
     }`;
     btn.textContent = modelKey;
     btn.addEventListener('click', () => {
@@ -9827,16 +9831,29 @@ function selectModelSearchResult(modelKey) {
   document.getElementById('modelSearchResults')?.classList.remove('hidden');
 
   const docIconSvg = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>';
-  const renderIconLinks = (value, titleText) => {
+  const renderIconLinks = (value, titleText, tone = 'red') => {
     const trimmed = String(value || '').trim();
     const urls = trimmed.match(/https?:\/\/[^\s,;]+/gi) || [];
+    const toneMap = {
+      red: 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100 hover:border-red-300',
+      emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300',
+      sky: 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 hover:border-sky-300',
+      violet: 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300'
+    };
+    const badgeCls = toneMap[tone] || toneMap.red;
     if (urls.length > 0) {
-      return `<div class="inline-flex items-center justify-center gap-1">${urls.map((u, idx) => `<a href="${escapeAuditReportText(u)}" target="_blank" rel="noopener noreferrer" title="${escapeAuditReportText(titleText)}${urls.length > 1 ? ' #' + (idx + 1) : ''}" class="inline-flex h-6 w-6 items-center justify-center rounded-md bg-red-800 text-white hover:bg-red-700 transition shadow-2xs">${docIconSvg}</a>`).join('')}</div>`;
+      return `<div class="inline-flex items-center justify-center gap-1">${urls.map((u, idx) => `<a href="${escapeAuditReportText(u)}" target="_blank" rel="noopener noreferrer" title="${escapeAuditReportText(titleText)}${urls.length > 1 ? ' #' + (idx + 1) : ''}" class="inline-flex h-6 w-6 items-center justify-center rounded-lg border ${badgeCls} transition">${docIconSvg}</a>`).join('')}</div>`;
     }
-    return `<span class="text-[11px] text-slate-400">${escapeAuditReportText(trimmed || '—')}</span>`;
+    if (!trimmed || /^n\/?a$/i.test(trimmed) || trimmed === '-') {
+      return '<span class="text-[11px] text-slate-300">—</span>';
+    }
+    if (/pendiente/i.test(trimmed)) {
+      return `<span class="inline-flex rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">${escapeAuditReportText(trimmed)}</span>`;
+    }
+    return `<span class="text-[11px] text-slate-400">${escapeAuditReportText(trimmed)}</span>`;
   };
 
-  // 1. Certificados RG-0612 (tabla compacta estilo AI Studio)
+  // 1. Certificados RG-0612
   const certBody = document.getElementById('modelSearchCertTableBody');
   if (certBody) {
     const certs = entry.certificates.length ? entry.certificates : [null];
@@ -9844,17 +9861,17 @@ function selectModelSearchResult(modelKey) {
       const cond = cert?.condition || '—';
       const isVig = cond.toLowerCase().includes('vigente');
       const condBadge = cert?.condition
-        ? `<span class="inline-flex rounded-full px-2 py-0.5 text-[10.5px] font-bold ${isVig ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'}">${escapeAuditReportText(cond)}</span>`
-        : '<span class="text-slate-400">—</span>';
+        ? `<span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${isVig ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-800 border border-amber-200'}">${escapeAuditReportText(cond)}</span>`
+        : '<span class="text-slate-300">—</span>';
       return `
         <tr class="hover:bg-slate-50/70">
-          <td class="px-4 py-2.5 font-extrabold text-red-700 whitespace-nowrap">${escapeAuditReportText(entry.model)}</td>
+          <td class="px-4 py-2.5 font-mono font-bold text-red-600 whitespace-nowrap">${escapeAuditReportText(entry.model)}</td>
           <td class="px-4 py-2.5 font-semibold text-slate-800">${escapeAuditReportText(cert?.brand || '—')}</td>
-          <td class="px-4 py-2.5 text-slate-700">${escapeAuditReportText(cert?.chassis || '—')}</td>
+          <td class="px-4 py-2.5 font-mono text-slate-600">${escapeAuditReportText(cert?.chassis || '—')}</td>
           <td class="px-4 py-2.5">${condBadge}</td>
-          <td class="px-4 py-2.5 text-center">${renderIconLinks(cert?.cbUrl, 'Abrir CB / CDF')}</td>
-          <td class="px-4 py-2.5 text-center">${renderIconLinks(cert?.criticosUrl, 'Abrir Críticos')}</td>
-          <td class="px-4 py-2.5 text-center">${renderIconLinks(cert?.ddjjUrl, 'Abrir DDJJ')}</td>
+          <td class="px-4 py-2.5 text-center">${renderIconLinks(cert?.cbUrl, 'Abrir CB / CDF', 'emerald')}</td>
+          <td class="px-4 py-2.5 text-center">${renderIconLinks(cert?.criticosUrl, 'Abrir Críticos', 'red')}</td>
+          <td class="px-4 py-2.5 text-center">${renderIconLinks(cert?.ddjjUrl, 'Abrir DDJJ', 'sky')}</td>
         </tr>
       `;
     }).join('');
@@ -9873,13 +9890,13 @@ function selectModelSearchResult(modelKey) {
       bomHead.innerHTML = `
         <tr>
           <th class="px-4 py-2">Modelo</th>
-          ${entry.bomVersions.map(v => `<th class="px-4 py-2 text-center">${escapeAuditReportText(v.version)}</th>`).join('')}
+          ${entry.bomVersions.map(v => `<th class="px-4 py-2 text-center font-mono">${escapeAuditReportText(v.version)}</th>`).join('')}
         </tr>
       `;
       bomBody.innerHTML = `
-        <tr>
-          <td class="px-4 py-2.5 font-extrabold text-red-700 whitespace-nowrap">${escapeAuditReportText(entry.model)}</td>
-          ${entry.bomVersions.map(v => `<td class="px-4 py-2.5 text-center">${renderIconLinks(v.url, 'Abrir BOM ' + v.version)}</td>`).join('')}
+        <tr class="hover:bg-slate-50/70">
+          <td class="px-4 py-2.5 font-mono font-bold text-slate-800 whitespace-nowrap">${escapeAuditReportText(entry.model)}</td>
+          ${entry.bomVersions.map(v => `<td class="px-4 py-2.5 text-center">${renderIconLinks(v.url, 'Abrir BOM ' + v.version, 'sky')}</td>`).join('')}
         </tr>
       `;
     }
@@ -9922,25 +9939,34 @@ function renderModelSearchSpecifications() {
   }
 
   const docIconSvg = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>';
-  const renderLinkCell = (val, label) => {
+  const renderLinkCell = (val, label, tone = 'violet') => {
     const trimmed = String(val || '').trim();
     const urls = trimmed.match(/https?:\/\/[^\s,;]+/gi) || [];
+    const toneCls = tone === 'sky'
+      ? 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 hover:border-sky-300'
+      : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300';
     if (urls.length > 0) {
-      return `<div class="inline-flex items-center justify-center gap-1">${urls.map((u, idx) => `<a href="${escapeAuditReportText(u)}" target="_blank" rel="noopener noreferrer" title="${escapeAuditReportText(label)}${urls.length > 1 ? ' #' + (idx + 1) : ''}" class="inline-flex h-6 w-6 items-center justify-center rounded-md bg-red-800 text-white hover:bg-red-700 transition shadow-2xs">${docIconSvg}</a>`).join('')}</div>`;
+      return `<div class="inline-flex items-center justify-center gap-1">${urls.map((u, idx) => `<a href="${escapeAuditReportText(u)}" target="_blank" rel="noopener noreferrer" title="${escapeAuditReportText(label)}${urls.length > 1 ? ' #' + (idx + 1) : ''}" class="inline-flex h-6 w-6 items-center justify-center rounded-lg border ${toneCls} transition">${docIconSvg}</a>`).join('')}</div>`;
     }
-    return `<span class="text-[11px] text-slate-400">${escapeAuditReportText(trimmed || '—')}</span>`;
+    if (!trimmed || /^n\/?a$/i.test(trimmed) || trimmed === '-') {
+      return '<span class="text-[11px] text-slate-300">—</span>';
+    }
+    if (/pendiente/i.test(trimmed)) {
+      return `<span class="inline-flex rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">${escapeAuditReportText(trimmed)}</span>`;
+    }
+    return `<span class="text-[11px] text-slate-400">${escapeAuditReportText(trimmed)}</span>`;
   };
 
   tbody.innerHTML = filtered.map(s => `
     <tr class="hover:bg-slate-50/70">
-      <td class="px-4 py-2.5 font-bold text-slate-800 whitespace-nowrap">${escapeAuditReportText(s.material || '—')}</td>
-      <td class="px-4 py-2.5">
-        <div class="font-mono font-bold text-slate-900">${escapeAuditReportText(s.partNumber || '—')}</div>
-        ${s.description ? `<div class="text-[10.5px] text-slate-500 mt-0.5">${escapeAuditReportText(s.description)}</div>` : ''}
+      <td class="px-4 py-2 font-bold text-slate-800 whitespace-nowrap">${escapeAuditReportText(s.material || '—')}</td>
+      <td class="px-4 py-2">
+        <div class="font-mono font-bold text-slate-800">${escapeAuditReportText(s.partNumber || '—')}</div>
+        ${s.description ? `<div class="text-[10.5px] text-slate-500 mt-0.5 leading-snug">${escapeAuditReportText(s.description)}</div>` : ''}
       </td>
-      <td class="px-4 py-2.5 font-bold text-slate-700 whitespace-nowrap">${escapeAuditReportText(s.version || '—')}</td>
-      <td class="px-4 py-2.5 text-center whitespace-nowrap">${renderLinkCell(s.specArteUrl, 'Spec Arte')}</td>
-      <td class="px-4 py-2.5 text-center whitespace-nowrap">${renderLinkCell(s.specPlanoUrl, 'Spec Plano')}</td>
+      <td class="px-4 py-2 whitespace-nowrap"><span class="inline-flex rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-600">${escapeAuditReportText(s.version || '—')}</span></td>
+      <td class="px-4 py-2 text-center whitespace-nowrap">${renderLinkCell(s.specArteUrl, 'Spec Arte', 'violet')}</td>
+      <td class="px-4 py-2 text-center whitespace-nowrap">${renderLinkCell(s.specPlanoUrl, 'Spec Plano', 'sky')}</td>
     </tr>
   `).join('');
 }
