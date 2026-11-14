@@ -9924,7 +9924,31 @@ function selectModelSearchResult(modelKey) {
     }
   }
 
-  // 4. Especificaciones
+  // 4. Avisos de Cambio (Actividades IQC UP5: Col A=Modelo, C=Acción, D=Marca, F=Código, G=Descripción, K=Vigencia, L=Fecha, M=Alterno)
+  const changesCountEl = document.getElementById('modelSearchChangesCount');
+  const changesBody = document.getElementById('modelSearchChangesTableBody');
+  const changeNotices = Array.isArray(entry.changeNotices) ? entry.changeNotices : [];
+  if (changesCountEl) changesCountEl.textContent = `${changeNotices.length} aviso(s)`;
+  if (changesBody) {
+    if (!changeNotices.length) {
+      changesBody.innerHTML = '<tr><td colspan="8" class="px-4 py-4 text-center text-xs text-slate-400">Sin avisos de cambio registrados para este modelo.</td></tr>';
+    } else {
+      changesBody.innerHTML = changeNotices.map(ch => `
+        <tr class="hover:bg-slate-50/70">
+          <td class="px-4 py-2 font-mono font-bold text-red-600 whitespace-nowrap">${escapeAuditReportText(ch.model || entry.model)}</td>
+          <td class="px-4 py-2 whitespace-nowrap">${getModelSearchActionBadge(ch.action)}</td>
+          <td class="px-4 py-2 font-semibold text-slate-800 whitespace-nowrap">${escapeAuditReportText(ch.brand || '—')}</td>
+          <td class="px-4 py-2 font-mono font-bold text-slate-800 whitespace-nowrap">${escapeAuditReportText(ch.code || '—')}</td>
+          <td class="px-4 py-2 text-slate-600 text-[11px] leading-snug">${escapeAuditReportText(ch.description || '—')}</td>
+          <td class="px-4 py-2 whitespace-nowrap"><span class="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">${escapeAuditReportText(ch.validity || '—')}</span></td>
+          <td class="px-4 py-2 font-mono text-slate-600 whitespace-nowrap">${escapeAuditReportText(ch.date || '—')}</td>
+          <td class="px-4 py-2 text-center whitespace-nowrap"><span class="inline-flex rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-700">${escapeAuditReportText(ch.alternate || '—')}</span></td>
+        </tr>
+      `).join('');
+    }
+  }
+
+  // 5. Especificaciones
   const specStatusSelect = document.getElementById('modelSearchSpecStatusFilter');
   const specVerSelect = document.getElementById('modelSearchSpecVersionFilter');
   const specTextInput = document.getElementById('modelSearchSpecTextFilter');
@@ -9939,30 +9963,24 @@ function selectModelSearchResult(modelKey) {
   }
   renderModelSearchSpecifications();
 
-  // 5. Avisos de Cambio (Actividades IQC UP5: Col A=Modelo, D=Marca, F=Código, G=Descripción, K=Vigencia, L=Fecha, M=Alterno)
-  const changesCountEl = document.getElementById('modelSearchChangesCount');
-  const changesBody = document.getElementById('modelSearchChangesTableBody');
-  const changeNotices = Array.isArray(entry.changeNotices) ? entry.changeNotices : [];
-  if (changesCountEl) changesCountEl.textContent = `${changeNotices.length} aviso(s)`;
-  if (changesBody) {
-    if (!changeNotices.length) {
-      changesBody.innerHTML = '<tr><td colspan="7" class="px-4 py-4 text-center text-xs text-slate-400">Sin avisos de cambio registrados para este modelo.</td></tr>';
-    } else {
-      changesBody.innerHTML = changeNotices.map(ch => `
-        <tr class="hover:bg-slate-50/70">
-          <td class="px-4 py-2 font-mono font-bold text-red-600 whitespace-nowrap">${escapeAuditReportText(ch.model || entry.model)}</td>
-          <td class="px-4 py-2 font-semibold text-slate-800 whitespace-nowrap">${escapeAuditReportText(ch.brand || '—')}</td>
-          <td class="px-4 py-2 font-mono font-bold text-slate-800 whitespace-nowrap">${escapeAuditReportText(ch.code || '—')}</td>
-          <td class="px-4 py-2 text-slate-600 text-[11px] leading-snug">${escapeAuditReportText(ch.description || '—')}</td>
-          <td class="px-4 py-2 whitespace-nowrap"><span class="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">${escapeAuditReportText(ch.validity || '—')}</span></td>
-          <td class="px-4 py-2 font-mono text-slate-600 whitespace-nowrap">${escapeAuditReportText(ch.date || '—')}</td>
-          <td class="px-4 py-2 text-center whitespace-nowrap"><span class="inline-flex rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-700">${escapeAuditReportText(ch.alternate || '—')}</span></td>
-        </tr>
-      `).join('');
-    }
-  }
-
   renderModelSearchSuggestions((document.getElementById('modelSearchInput')?.value || '').trim().toUpperCase());
+}
+
+function getModelSearchActionBadge(rawAction) {
+  const act = String(rawAction || '').trim().toUpperCase();
+  if (!act) {
+    return '<span class="text-[11px] text-slate-300">—</span>';
+  }
+  if (act.startsWith('AG')) {
+    return `<span class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>${escapeAuditReportText(act)}</span>`;
+  }
+  if (act.startsWith('EL')) {
+    return `<span class="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 font-mono text-[10px] font-bold text-rose-700"><span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>${escapeAuditReportText(act)}</span>`;
+  }
+  if (act.startsWith('AL')) {
+    return `<span class="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50/70 px-2 py-0.5 font-mono text-[10px] font-bold text-rose-600"><span class="h-1.5 w-1.5 rounded-full bg-rose-400"></span>${escapeAuditReportText(act)}</span>`;
+  }
+  return `<span class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-600"><span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span>${escapeAuditReportText(act)}</span>`;
 }
 
 function getModelSearchStatusBadge(rawStatus) {
