@@ -392,63 +392,6 @@
             </div>
           </section>
 
-          <!-- DIAGRAMA DE GANTT Y AVISO PREVENTIVO DE INGRESOS A PRODUCCIÓN (5 DÍAS HÁBILES) -->
-          <section class="clean-card relative overflow-hidden p-5 sm:p-6" aria-labelledby="incomingModelsAlertTitle">
-            <div class="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 via-amber-500 to-emerald-500"></div>
-
-            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between border-b border-slate-100 pb-4">
-              <div class="flex items-start gap-3">
-                <span class="w-10 h-10 shrink-0 rounded-2xl bg-gradient-to-br from-red-50 to-amber-50 border border-red-100 text-red-600 flex items-center justify-center text-base shadow-2xs">📊</span>
-                <div>
-                  <div class="flex flex-wrap items-center gap-2">
-                    <h3 id="incomingModelsAlertTitle" class="font-extrabold text-base text-slate-900 tracking-tight">Planificación de Ingresos a Producción y Alertas Preventivas</h3>
-                    <span id="dashboardIncomingAlertsSummaryBadge" class="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-[10px] font-extrabold text-rose-700">Cargando...</span>
-                  </div>
-                  <p class="text-xs text-slate-500 mt-0.5">Aviso anticipado en ventana de <strong>5 días hábiles</strong> y Diagrama de Gantt por línea desde la fecha actual hacia adelante.</p>
-                </div>
-              </div>
-              <div class="flex flex-wrap items-center gap-2">
-                <select id="dashboardIncomingFilterMode" onchange="window.renderIncomingModelAlerts()" class="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-1.5 text-[11px] font-bold text-slate-700 focus:border-red-400 focus:bg-white focus:outline-none">
-                  <option value="all_future">📅 Todos los próximos ingresos</option>
-                  <option value="five_days">🔔 Solo ventana de 5 días hábiles</option>
-                  <option value="with_events">⚠️ Solo con eventos previos</option>
-                </select>
-                <select id="dashboardIncomingFilterLine" onchange="window.renderIncomingModelAlerts()" class="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-1.5 text-[11px] font-semibold text-slate-700 focus:border-red-400 focus:bg-white focus:outline-none">
-                  <option value="">Todas las líneas</option>
-                  <option value="LCD6">LCD 6</option>
-                  <option value="LCD8">LCD 8</option>
-                  <option value="CELDA 3">CELDA 3</option>
-                </select>
-                <button type="button" onclick="navigateToView('buscador-modelo')" class="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:border-red-200 hover:text-red-600 transition cursor-pointer shadow-2xs">
-                  Buscador por Modelo &rarr;
-                </button>
-              </div>
-            </div>
-
-            <!-- 1. BANNER DE AVISO PREVENTIVO: INGRESOS EN PRÓXIMOS 5 DÍAS HÁBILES -->
-            <div id="dashboardFiveDaysNoticeContainer" class="mt-4"></div>
-
-            <!-- 2. DIAGRAMA DE GANTT POR LÍNEA DE PRODUCCIÓN (FECHAS DE MENOR A MAYOR) -->
-            <div id="dashboardIncomingGanttContainer" class="mt-4">
-              <div class="rounded-xl border border-slate-200 bg-slate-50/50 py-8 text-center text-xs text-slate-400">
-                Cargando Diagrama de Gantt de próximos ingresos...
-              </div>
-            </div>
-
-            <!-- 3. PANEL DESPLEGABLE DE DETALLE DE EVENTOS AL HACER CLIC EN UN BLOQUE DEL GANTT -->
-            <div id="dashboardIncomingGanttEventDrawer" class="mt-4 hidden"></div>
-
-            <!-- Leyenda minimalista del Gantt -->
-            <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 text-[10.5px] text-slate-500">
-              <div class="flex flex-wrap items-center gap-4">
-                <span class="inline-flex items-center gap-1.5 font-semibold text-slate-700"><span class="h-2.5 w-2.5 rounded-full bg-rose-500"></span>Con eventos previos (revisar antes de ingresar)</span>
-                <span class="inline-flex items-center gap-1.5 font-semibold text-slate-700"><span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>Sin eventos previos registrados</span>
-                <span class="inline-flex items-center gap-1.5"><span class="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.2 text-[9px] font-extrabold text-amber-800">5 DÍAS HÁBILES</span>Dentro de la ventana de aviso inmediato</span>
-              </div>
-              <span class="text-[10px] text-slate-400">Hacé clic en una barra del Gantt para ver sus eventos o abrir la ficha del modelo</span>
-            </div>
-          </section>
-
           <section id="view-equipo" class="view-container hidden clean-card relative overflow-hidden p-5 sm:p-7" aria-labelledby="qualityTeamTitle">
             <div class="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 via-rose-400 to-orange-300"></div>
             <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
@@ -2693,12 +2636,66 @@
             </div>
 
             <div class="p-5 sm:p-6">
-              <div id="modelSearchEmptyState" class="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 py-10 px-4 text-center">
-                <p class="text-xs font-semibold text-slate-600">Escribí un código de modelo arriba para consultar sus próximos Ingresos a Producción, Historial de Eventos, Certificados (RG-0612), Lista BOM, Etiquetas Impresas, Avisos de Cambio y Especificaciones.</p>
+              <!-- Estado inicial del Buscador por Modelo: Aviso de 5 días hábiles + Diagrama de Gantt de próximos ingresos -->
+              <div id="modelSearchEmptyState" class="space-y-4">
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between border-b border-slate-100 pb-3">
+                  <div class="flex items-start gap-2.5">
+                    <span class="w-9 h-9 shrink-0 rounded-xl bg-gradient-to-br from-red-50 to-amber-50 border border-red-100 text-red-600 flex items-center justify-center text-sm shadow-2xs">📊</span>
+                    <div>
+                      <div class="flex flex-wrap items-center gap-2">
+                        <h3 class="font-extrabold text-sm text-slate-900 tracking-tight">Planificación de Ingresos a Producción y Alertas Preventivas</h3>
+                        <span id="dashboardIncomingAlertsSummaryBadge" class="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-[10px] font-extrabold text-rose-700">Cargando...</span>
+                      </div>
+                      <p class="text-[11px] text-slate-500 mt-0.5">Aviso anticipado en ventana de <strong>5 días hábiles</strong> y Diagrama de Gantt por línea desde la fecha actual hacia adelante. Hacé clic en cualquier modelo para abrir su ficha completa.</p>
+                    </div>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <select id="dashboardIncomingFilterMode" onchange="window.renderIncomingModelAlerts()" class="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-1.5 text-[11px] font-bold text-slate-700 focus:border-red-400 focus:bg-white focus:outline-none">
+                      <option value="all_future">📅 Todos los próximos ingresos</option>
+                      <option value="five_days">🔔 Solo ventana de 5 días hábiles</option>
+                      <option value="with_events">⚠️ Solo con eventos previos</option>
+                    </select>
+                    <select id="dashboardIncomingFilterLine" onchange="window.renderIncomingModelAlerts()" class="rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-1.5 text-[11px] font-semibold text-slate-700 focus:border-red-400 focus:bg-white focus:outline-none">
+                      <option value="">Todas las líneas</option>
+                      <option value="LCD6">LCD 6</option>
+                      <option value="LCD8">LCD 8</option>
+                      <option value="CELDA 3">CELDA 3</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- 1. BANNER DE AVISO PREVENTIVO: INGRESOS EN PRÓXIMOS 5 DÍAS HÁBILES -->
+                <div id="dashboardFiveDaysNoticeContainer"></div>
+
+                <!-- 2. PANEL DESPLEGABLE DE DETALLE DE EVENTOS AL HACER CLIC EN UN BLOQUE DEL GANTT -->
+                <div id="dashboardIncomingGanttEventDrawer" class="hidden"></div>
+
+                <!-- 3. DIAGRAMA DE GANTT POR LÍNEA DE PRODUCCIÓN (FECHAS DE MENOR A MAYOR) -->
+                <div id="dashboardIncomingGanttContainer">
+                  <div class="rounded-xl border border-slate-200 bg-slate-50/50 py-8 text-center text-xs text-slate-400">
+                    Cargando Diagrama de Gantt de próximos ingresos...
+                  </div>
+                </div>
+
+                <!-- Leyenda minimalista del Gantt -->
+                <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-2.5 text-[10.5px] text-slate-500">
+                  <div class="flex flex-wrap items-center gap-4">
+                    <span class="inline-flex items-center gap-1.5 font-semibold text-slate-700"><span class="h-2.5 w-2.5 rounded-full bg-rose-500"></span>Con eventos previos (revisar antes de ingresar)</span>
+                    <span class="inline-flex items-center gap-1.5 font-semibold text-slate-700"><span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>Sin eventos previos registrados</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.2 text-[9px] font-extrabold text-amber-800">5 DÍAS HÁBILES</span>Dentro de la ventana de aviso inmediato</span>
+                  </div>
+                  <span class="text-[10px] text-slate-400">Hacé clic en el código del modelo para abrir toda su ficha o en la tarjeta para ver sus eventos previos</span>
+                </div>
               </div>
 
               <!-- Resultados minimalistas con paleta de colores del sitio -->
               <div id="modelSearchResults" class="hidden space-y-5">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                  <button type="button" onclick="document.getElementById('modelSearchClearBtn')?.click()" class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-red-700 transition cursor-pointer">
+                    &larr; Volver al Diagrama de Gantt y Avisos de Ingreso
+                  </button>
+                </div>
+
                 <!-- 0A. Ingresos a Producción Programados (posteriores a la fecha actual, ordenados de menor a mayor) -->
                 <section class="space-y-2">
                   <div class="flex flex-wrap items-center justify-between gap-2">
