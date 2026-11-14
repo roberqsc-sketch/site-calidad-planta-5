@@ -392,6 +392,60 @@
             </div>
           </section>
 
+          <!-- CRONOGRAMA PREVENTIVO DE INGRESOS DE MODELOS Y EVENTOS PREVIOS (RG-0154 COL. H + EVENTOS TV) -->
+          <section class="clean-card p-5 sm:p-6" aria-labelledby="incomingModelsAlertTitle">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-4">
+              <div class="flex items-start gap-2.5">
+                <span class="w-9 h-9 shrink-0 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-sm">📅</span>
+                <div>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <h3 id="incomingModelsAlertTitle" class="font-bold text-base text-slate-900">Próximos Ingresos a Producción y Alerta Preventiva de Eventos</h3>
+                    <span class="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-mono text-[9.5px] font-bold text-emerald-700">RG-0154 · Col. H</span>
+                    <span id="dashboardIncomingAlertsSummaryBadge" class="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-[10px] font-extrabold text-rose-700">Cargando...</span>
+                  </div>
+                  <p class="text-xs text-slate-500 mt-0.5">Cronograma guiado por fecha de ingreso a producción (Columna H de RG-0154) cruzado con el historial de Eventos TV para anticipar desvíos antes de producir.</p>
+                </div>
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                <select id="dashboardIncomingFilterMode" onchange="window.renderIncomingModelAlerts()" class="rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-1.5 text-[11px] font-bold text-slate-700 focus:border-red-400 focus:bg-white focus:outline-none">
+                  <option value="upcoming">Próximos / Últimos ingresos</option>
+                  <option value="with_events">⚠️ Solo modelos con eventos previos</option>
+                  <option value="all">Todos los registros recientes</option>
+                </select>
+                <select id="dashboardIncomingFilterLine" onchange="window.renderIncomingModelAlerts()" class="rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 focus:border-red-400 focus:bg-white focus:outline-none">
+                  <option value="">Todas las líneas</option>
+                  <option value="LCD6">LCD 6</option>
+                  <option value="LCD8">LCD 8</option>
+                  <option value="CELDA 3">CELDA 3</option>
+                </select>
+                <button type="button" onclick="navigateToView('buscador-modelo')" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-700 hover:border-red-200 hover:text-red-600 transition cursor-pointer">
+                  Ir al Buscador por Modelo &rarr;
+                </button>
+              </div>
+            </div>
+
+            <div class="mt-4 max-h-[380px] overflow-auto rounded-xl border border-slate-200 bg-white">
+              <table class="w-full min-w-[780px] text-left text-xs">
+                <thead class="sticky top-0 z-10 border-b border-slate-100 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th class="px-3.5 py-2.5">Fecha Ingreso (Col. H)</th>
+                    <th class="px-3.5 py-2.5">Línea</th>
+                    <th class="px-3.5 py-2.5">Modelo</th>
+                    <th class="px-3.5 py-2.5">Marca</th>
+                    <th class="px-3.5 py-2.5">Lote / Cant.</th>
+                    <th class="px-3.5 py-2.5"># OP / Versión</th>
+                    <th class="px-3.5 py-2.5"># IQC / Estado</th>
+                    <th class="px-3.5 py-2.5">Historial de Eventos Previos</th>
+                    <th class="px-3.5 py-2.5 text-right">Acción</th>
+                  </tr>
+                </thead>
+                <tbody id="dashboardIncomingAlertsTableBody" class="divide-y divide-slate-100">
+                  <tr><td colspan="9" class="px-4 py-6 text-center text-xs text-slate-400">Cargando cronograma de ingresos desde RG-0154...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
           <section id="view-equipo" class="view-container hidden clean-card relative overflow-hidden p-5 sm:p-7" aria-labelledby="qualityTeamTitle">
             <div class="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-600 via-rose-400 to-orange-300"></div>
             <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
@@ -1845,6 +1899,36 @@
               </div>
             </div>
 
+            <div class="mb-6 space-y-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2">
+                  <span class="h-2 w-2 rounded-full bg-teal-500"></span>
+                  <h4 class="text-xs font-extrabold uppercase tracking-wider text-slate-800">Cronograma de Ingresos a Producción y Alerta de Eventos Previos</h4>
+                  <span class="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-mono text-[9.5px] font-bold text-emerald-700">RG-0154 · Columna H</span>
+                </div>
+                <span class="text-[11px] text-slate-500">Hacé clic en el modelo para abrir su ficha técnica y ver qué eventos tuvo antes de entrar a línea</span>
+              </div>
+              <div class="max-h-[420px] overflow-auto rounded-xl border border-slate-200 bg-white">
+                <table class="w-full min-w-[780px] text-left text-xs">
+                  <thead class="sticky top-0 z-10 border-b border-slate-100 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                    <tr>
+                      <th class="px-3.5 py-2.5">Fecha Ingreso (Col. H)</th>
+                      <th class="px-3.5 py-2.5">Línea</th>
+                      <th class="px-3.5 py-2.5">Modelo</th>
+                      <th class="px-3.5 py-2.5">Marca</th>
+                      <th class="px-3.5 py-2.5">Lote / Cant.</th>
+                      <th class="px-3.5 py-2.5"># OP / Ver.</th>
+                      <th class="px-3.5 py-2.5"># IQC / Estado</th>
+                      <th class="px-3.5 py-2.5">Eventos Previos</th>
+                    </tr>
+                  </thead>
+                  <tbody id="iqcViewIncomingScheduleBody" class="divide-y divide-slate-100">
+                    <tr><td colspan="8" class="px-4 py-6 text-center text-xs text-slate-400">Cargando cronograma RG-0154...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <div class="overflow-x-auto w-full">
               <table class="w-full text-left text-xs">
                 <thead class="border-b border-slate-200 text-slate-500 font-bold uppercase text-[11px]">
@@ -2636,12 +2720,103 @@
             </div>
 
             <div class="p-5 sm:p-6">
-              <div id="modelSearchEmptyState" class="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 py-10 px-4 text-center">
-                <p class="text-xs font-semibold text-slate-600">Escribí un código de modelo arriba para consultar Certificados (RG-0612), Lista BOM, Validación de Etiquetas Impresas, Especificaciones y Avisos de Cambio.</p>
+              <div id="modelSearchEmptyState" class="space-y-4">
+                <div class="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 py-5 px-4 text-center">
+                  <p class="text-xs font-semibold text-slate-600">Escribí un código de modelo arriba o seleccioná uno de los próximos ingresos a producción abajo para ver su ficha completa y qué eventos tuvo.</p>
+                </div>
+
+                <!-- Panel preventivo en Buscador por Modelo cuando no hay búsqueda activa -->
+                <div class="space-y-2">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
+                      <span class="h-2 w-2 rounded-full bg-rose-500"></span>
+                      <h3 class="text-[11px] font-extrabold uppercase tracking-wider text-slate-800">Próximos Modelos a Ingresar y Alertas de Eventos Previos</h3>
+                      <span class="rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-mono text-[9.5px] font-bold text-emerald-700">RG-0154 · Col. H</span>
+                    </div>
+                    <span class="text-[10.5px] text-slate-500">Hacé clic en cualquier modelo para ver sus eventos previos, avisos de cambio y especificaciones</span>
+                  </div>
+                  <div class="max-h-[360px] overflow-auto rounded-xl border border-slate-200 bg-white">
+                    <table class="w-full min-w-[740px] text-left text-xs">
+                      <thead class="sticky top-0 z-10 border-b border-slate-100 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        <tr>
+                          <th class="px-3.5 py-2.5">Fecha Ingreso (Col. H)</th>
+                          <th class="px-3.5 py-2.5">Línea</th>
+                          <th class="px-3.5 py-2.5">Modelo</th>
+                          <th class="px-3.5 py-2.5">Marca</th>
+                          <th class="px-3.5 py-2.5">Lote / Cant.</th>
+                          <th class="px-3.5 py-2.5"># OP / Ver.</th>
+                          <th class="px-3.5 py-2.5"># IQC</th>
+                          <th class="px-3.5 py-2.5">Eventos Previos del Modelo</th>
+                        </tr>
+                      </thead>
+                      <tbody id="modelSearchIncomingPreviewBody" class="divide-y divide-slate-100">
+                        <tr><td colspan="8" class="px-4 py-6 text-center text-xs text-slate-400">Cargando cronograma RG-0154...</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
 
               <!-- Resultados minimalistas con paleta de colores del sitio -->
               <div id="modelSearchResults" class="hidden space-y-5">
+                <!-- 0A. Cronograma de Ingreso a Producción (RG-0154 · Columna H) -->
+                <section class="space-y-2">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
+                      <span class="h-2 w-2 rounded-full bg-teal-500"></span>
+                      <h3 class="text-[11px] font-extrabold uppercase tracking-wider text-slate-800">Ingresos a Producción Programados (IQC)</h3>
+                      <span class="rounded-md border border-teal-200 bg-teal-50 px-1.5 py-0.5 font-mono text-[9.5px] font-bold text-teal-700">RG-0154 · Col. H</span>
+                      <span id="modelSearchIqcCount" class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[9.5px] font-bold text-slate-600">0 ingresos</span>
+                    </div>
+                  </div>
+                  <div class="max-h-[260px] overflow-auto rounded-xl border border-slate-200 bg-white">
+                    <table class="w-full min-w-[720px] text-left text-xs">
+                      <thead class="sticky top-0 z-10 border-b border-slate-100 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        <tr>
+                          <th class="px-4 py-2.5">Fecha Ingreso (Col. H)</th>
+                          <th class="px-4 py-2.5">Línea</th>
+                          <th class="px-4 py-2.5">Lote</th>
+                          <th class="px-4 py-2.5">Cant. x Lt</th>
+                          <th class="px-4 py-2.5">Versión</th>
+                          <th class="px-4 py-2.5"># OP</th>
+                          <th class="px-4 py-2.5"># PO</th>
+                          <th class="px-4 py-2.5"># IQC / Fecha IQC</th>
+                          <th class="px-4 py-2.5">Estado IQC</th>
+                        </tr>
+                      </thead>
+                      <tbody id="modelSearchIqcTableBody" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <!-- 0B. Historial de Eventos del Modelo (Alerta Preventiva Pre-Producción) -->
+                <section class="space-y-2">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
+                      <span class="h-2 w-2 rounded-full bg-rose-500"></span>
+                      <h3 class="text-[11px] font-extrabold uppercase tracking-wider text-slate-800">Historial de Eventos y Alertas del Modelo</h3>
+                      <span id="modelSearchEventsCount" class="rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 font-mono text-[9.5px] font-bold text-rose-700">0 eventos</span>
+                    </div>
+                    <span class="text-[10px] font-semibold text-slate-500">Antecedentes en línea para revisar antes de ingresar a producción</span>
+                  </div>
+                  <div class="max-h-[360px] overflow-auto rounded-xl border border-slate-200 bg-white">
+                    <table class="w-full min-w-[820px] text-left text-xs">
+                      <thead class="sticky top-0 z-10 border-b border-slate-100 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        <tr>
+                          <th class="px-4 py-2.5">Evento / Fecha</th>
+                          <th class="px-4 py-2.5">Lote</th>
+                          <th class="px-4 py-2.5">Tipo NC</th>
+                          <th class="px-4 py-2.5">Part Number</th>
+                          <th class="px-4 py-2.5">Defecto / Problema / Consideración</th>
+                          <th class="px-4 py-2.5">Acción de Contención / Correctiva</th>
+                          <th class="px-4 py-2.5 text-center">Evidencias</th>
+                        </tr>
+                      </thead>
+                      <tbody id="modelSearchEventsTableBody" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                  </div>
+                </section>
+
                 <!-- 1. Certificados y RG-0612 (acento Esmeralda / Rojo) -->
                 <section class="space-y-2">
                   <div class="flex items-center justify-between">

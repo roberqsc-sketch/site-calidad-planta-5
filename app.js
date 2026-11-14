@@ -9705,7 +9705,268 @@ window.initModelSearchView = function() {
   }
 };
 
-const MODEL_SEARCH_STORAGE_KEY = 'calidad_planta5_model_search_cache_v3';
+const MODEL_SEARCH_STORAGE_KEY = 'calidad_planta5_model_search_cache_v4';
+
+window.openModelInSearch = function(rawModelCode) {
+  const code = String(rawModelCode || '').trim().toUpperCase();
+  if (!code) return;
+  if (typeof navigateToView === 'function') {
+    navigateToView('buscador-modelo');
+  }
+  if (typeof window.initModelSearchView === 'function') {
+    window.initModelSearchView();
+  }
+  const input = document.getElementById('modelSearchInput');
+  const clearBtn = document.getElementById('modelSearchClearBtn');
+  if (input) input.value = code;
+  if (clearBtn) clearBtn.classList.remove('hidden');
+
+  if (modelSearchPayload && modelSearchPayload.models) {
+    const best = findBestModelSearchMatch(code) || (modelSearchPayload.models[code] ? code : '');
+    if (best) {
+      selectModelSearchResult(best);
+    }
+  }
+  const viewEl = document.getElementById('view-buscador-modelo');
+  if (viewEl) {
+    viewEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+};
+
+window.toggleIncomingEventDetails = function(detailRowId) {
+  const row = document.getElementById(detailRowId);
+  if (row) {
+    row.classList.toggle('hidden');
+  }
+};
+
+window.renderIncomingModelAlerts = function(payloadData = modelSearchPayload) {
+  const data = payloadData || modelSearchPayload;
+  const schedule = Array.isArray(data?.incomingSchedule) ? data.incomingSchedule : [];
+
+  const dashBody = document.getElementById('dashboardIncomingAlertsTableBody');
+  const dashSummaryBadge = document.getElementById('dashboardIncomingAlertsSummaryBadge');
+  const iqcBody = document.getElementById('iqcViewIncomingScheduleBody');
+  const searchPreviewBody = document.getElementById('modelSearchIncomingPreviewBody');
+
+  if (!schedule.length) {
+    const emptyMsg = '<tr><td colspan="9" class="px-4 py-6 text-center text-xs text-slate-400">Sin registros de ingresos programados disponibles.</td></tr>';
+    if (dashBody && !data) dashBody.innerHTML = '<tr><td colspan="9" class="px-4 py-6 text-center text-xs text-slate-400">Cargando cronograma de ingresos desde RG-0154...</td></tr>';
+    else if (dashBody) dashBody.innerHTML = emptyMsg;
+    if (iqcBody && data) iqcBody.innerHTML = '<tr><td colspan="8" class="px-4 py-6 text-center text-xs text-slate-400">Sin registros de ingresos programados disponibles.</td></tr>';
+    if (searchPreviewBody && data) searchPreviewBody.innerHTML = '<tr><td colspan="8" class="px-4 py-6 text-center text-xs text-slate-400">Sin registros de ingresos programados disponibles.</td></tr>';
+    return;
+  }
+
+  // Resumen de cuántos modelos próximos tienen eventos previos
+  const recentTop = schedule.slice(0, 35);
+  const modelsWithEventsCount = new Set(recentTop.filter(r => (r.eventsCount || 0) > 0).map(r => r.model)).size;
+  if (dashSummaryBadge) {
+    if (modelsWithEventsCount > 0) {
+      dashSummaryBadge.className = 'rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-[10px] font-extrabold text-rose-700';
+      dashSummaryBadge.textContent = `⚠️ ${modelsWithEventsCount} modelo(s) próximo(s) con eventos previos`;
+    } else {
+      dashSummaryBadge.className = 'rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[10px] font-extrabold text-emerald-700';
+      dashSummaryBadge.textContent = '✓ Sin alertas en próximos ingresos';
+    }
+  }
+
+  const getLinePill = (lineStr) => {
+    const l = String(lineStr || '').trim().toUpperCase();
+    if (l.includes('LCD6') || l.includes('LCD 6')) {
+      return `<span class="inline-flex rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 font-mono text-[10px] font-bold text-sky-700">${escapeAuditReportText(lineStr)}</span>`;
+    }
+    if (l.includes('LCD8') || l.includes('LCD 8')) {
+      return `<span class="inline-flex rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 font-mono text-[10px] font-bold text-indigo-700">${escapeAuditReportText(lineStr)}</span>`;
+    }
+    if (l.includes('CELDA')) {
+      return `<span class="inline-flex rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 font-mono text-[10px] font-bold text-violet-700">${escapeAuditReportText(lineStr)}</span>`;
+    }
+    return `<span class="inline-flex rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-700">${escapeAuditReportText(lineStr || '—')}</span>`;
+  };
+
+  const getIqcResultBadge = (resStr) => {
+    const r = String(resStr || '').trim();
+    if (!r) return '<span class="text-[10px] text-slate-400">—</span>';
+    const upper = r.toUpperCase();
+    if (upper.includes('PENDIENTE')) {
+      return `<span class="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9.5px] font-bold text-amber-800">${escapeAuditReportText(r)}</span>`;
+    }
+    if (upper.includes('RECHAZ') || upper.includes('NG') || upper.includes('NO CONFORME')) {
+      return `<span class="inline-flex rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[9.5px] font-bold text-rose-700">${escapeAuditReportText(r)}</span>`;
+    }
+    return `<span class="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9.5px] font-bold text-emerald-700">${escapeAuditReportText(r)}</span>`;
+  };
+
+  const docIconSvg = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>';
+
+  // 1. Renderizar tabla del Dashboard con filtros y desplegable inline de eventos previos
+  if (dashBody) {
+    const modeFilter = document.getElementById('dashboardIncomingFilterMode')?.value || 'upcoming';
+    const lineFilter = (document.getElementById('dashboardIncomingFilterLine')?.value || '').trim().toUpperCase();
+
+    let filtered = schedule.filter(item => {
+      if (lineFilter) {
+        const itemLine = String(item.line || '').toUpperCase().replace(/\s+/g, '');
+        const targetLine = lineFilter.replace(/\s+/g, '');
+        if (!itemLine.includes(targetLine)) return false;
+      }
+      if (modeFilter === 'with_events' && !(item.eventsCount > 0)) return false;
+      return true;
+    });
+
+    if (modeFilter === 'upcoming') {
+      filtered = filtered.slice(0, 30);
+    } else {
+      filtered = filtered.slice(0, 80);
+    }
+
+    if (!filtered.length) {
+      dashBody.innerHTML = '<tr><td colspan="9" class="px-4 py-6 text-center text-xs text-slate-400">No hay ingresos que coincidan con el filtro seleccionado.</td></tr>';
+    } else {
+      dashBody.innerHTML = filtered.map((item, idx) => {
+        const hasEvents = (item.eventsCount || 0) > 0;
+        const detailId = `dashIncomingEvDetail_${idx}`;
+        const safeModelJs = escapeAuditReportText(item.model).replace(/'/g, "\\'");
+        const eventsBadge = hasEvents
+          ? `<button type="button" onclick="window.toggleIncomingEventDetails('${detailId}')" class="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-[10px] font-extrabold text-rose-700 hover:bg-rose-100 transition cursor-pointer" title="Hacé clic para desplegar qué eventos tuvo este modelo">
+              <span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
+              ⚠️ ${item.eventsCount} evento(s) previo(s) ▾
+            </button>`
+          : `<span class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>Sin eventos previos</span>`;
+
+        const recentEvents = Array.isArray(item.recentEvents) ? item.recentEvents : [];
+        const detailRowHtml = hasEvents
+          ? `<tr id="${detailId}" class="hidden bg-rose-50/40">
+              <td colspan="9" class="px-4 py-3">
+                <div class="rounded-xl border border-rose-200 bg-white p-3 space-y-2 shadow-2xs">
+                  <div class="flex flex-wrap items-center justify-between gap-2 border-b border-rose-100 pb-2">
+                    <div class="flex items-center gap-2">
+                      <span class="inline-flex h-5 w-5 items-center justify-center rounded-md bg-rose-600 text-[10px] font-black text-white">!</span>
+                      <span class="text-[11px] font-extrabold text-rose-950">Antecedentes del modelo ${escapeAuditReportText(item.model)} antes de ingresar a producción (${item.eventsCount} evento(s))</span>
+                    </div>
+                    <button type="button" onclick="window.openModelInSearch('${safeModelJs}')" class="text-[10.5px] font-bold text-red-600 hover:underline cursor-pointer">
+                      Abrir ficha técnica completa y todos los eventos &rarr;
+                    </button>
+                  </div>
+                  <div class="space-y-1.5">
+                    ${recentEvents.map(ev => {
+                      const mainIssue = ev.defect || ev.observations || 'Sin descripción detallada';
+                      const extraNote = (ev.defect && ev.observations) ? ` · Considerar: ${ev.observations}` : '';
+                      const actionStr = [
+                        ev.containmentAction ? `Contención: ${ev.containmentAction}` : '',
+                        ev.correctiveAction ? `Correctiva: ${ev.correctiveAction}` : ''
+                      ].filter(Boolean).join(' | ');
+                      const urls = Array.isArray(ev.urls) ? ev.urls : [];
+                      return `<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2 text-[11px]">
+                        <div class="space-y-0.5 min-w-0 flex-1">
+                          <div class="flex flex-wrap items-center gap-1.5">
+                            <span class="font-mono font-bold text-rose-700">#${escapeAuditReportText(ev.eventNumber || '—')}</span>
+                            <span class="font-mono text-[10px] text-slate-500">${escapeAuditReportText(ev.date || '—')}</span>
+                            ${ev.lot ? `<span class="rounded border border-slate-200 bg-white px-1.5 py-0.2 font-mono text-[9.5px] font-bold text-slate-600">Lote ${escapeAuditReportText(ev.lot)}</span>` : ''}
+                            ${ev.ncType ? `<span class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.2 text-[9.5px] font-bold text-amber-800">${escapeAuditReportText(ev.ncType)}</span>` : ''}
+                            ${ev.partNumber ? `<span class="font-mono text-[10px] font-bold text-slate-700">P/N: ${escapeAuditReportText(ev.partNumber)}</span>` : ''}
+                          </div>
+                          <p class="font-semibold text-slate-800 leading-snug">${escapeAuditReportText(mainIssue + extraNote)}</p>
+                          ${actionStr ? `<p class="text-[10px] text-slate-500 leading-snug">${escapeAuditReportText(actionStr)}</p>` : ''}
+                        </div>
+                        ${urls.length > 0 ? `<div class="flex items-center gap-1 shrink-0">${urls.map((u, uIdx) => `<a href="${escapeAuditReportText(u)}" target="_blank" rel="noopener noreferrer" title="Ver evidencia #${uIdx + 1}" class="inline-flex h-6 w-6 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition">${docIconSvg}</a>`).join('')}</div>` : ''}
+                      </div>`;
+                    }).join('')}
+                  </div>
+                </div>
+              </td>
+            </tr>`
+          : '';
+
+        return `
+          <tr class="hover:bg-slate-50/80 ${hasEvents ? 'bg-rose-50/15' : ''}">
+            <td class="px-3.5 py-2.5 whitespace-nowrap">
+              <span class="inline-flex items-center gap-1 rounded-md border border-teal-200 bg-teal-50 px-2 py-0.5 font-mono text-[10.5px] font-extrabold text-teal-800">
+                ${escapeAuditReportText(item.entryDate || '—')}
+              </span>
+            </td>
+            <td class="px-3.5 py-2.5 whitespace-nowrap">${getLinePill(item.line)}</td>
+            <td class="px-3.5 py-2.5 whitespace-nowrap">
+              <button type="button" onclick="window.openModelInSearch('${safeModelJs}')" class="font-mono font-extrabold text-red-600 hover:text-red-700 hover:underline cursor-pointer">
+                ${escapeAuditReportText(item.model)}
+              </button>
+            </td>
+            <td class="px-3.5 py-2.5 font-semibold text-slate-800 whitespace-nowrap">${escapeAuditReportText(item.brand || '—')}</td>
+            <td class="px-3.5 py-2.5 whitespace-nowrap">
+              <span class="font-mono font-bold text-slate-800">${escapeAuditReportText(item.lot || '—')}</span>
+              ${item.qty ? `<span class="ml-1 text-[10.5px] text-slate-500">(${escapeAuditReportText(item.qty)} u.)</span>` : ''}
+            </td>
+            <td class="px-3.5 py-2.5 whitespace-nowrap">
+              <span class="font-mono text-[11px] font-semibold text-slate-700">${escapeAuditReportText(item.opNumber || '—')}</span>
+              ${item.version ? `<span class="ml-1 rounded border border-slate-200 bg-slate-50 px-1 py-0.2 font-mono text-[9.5px] font-bold text-slate-600">V${escapeAuditReportText(item.version)}</span>` : ''}
+            </td>
+            <td class="px-3.5 py-2.5 whitespace-nowrap">
+              <div class="font-mono text-[10.5px] font-bold text-slate-700">${escapeAuditReportText(item.iqcNumber || '—')}</div>
+              <div class="mt-0.5">${getIqcResultBadge(item.finalResult)}</div>
+            </td>
+            <td class="px-3.5 py-2.5 whitespace-nowrap">${eventsBadge}</td>
+            <td class="px-3.5 py-2.5 text-right whitespace-nowrap">
+              <button type="button" onclick="window.openModelInSearch('${safeModelJs}')" class="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[10.5px] font-bold text-slate-700 hover:border-red-200 hover:bg-red-50 hover:text-red-700 transition cursor-pointer">
+                Ver ficha &rarr;
+              </button>
+            </td>
+          </tr>
+          ${detailRowHtml}
+        `;
+      }).join('');
+    }
+  }
+
+  // 2. Renderizar tabla en IQC Recepción (#iqcViewIncomingScheduleBody) y en Buscador por Modelo (#modelSearchIncomingPreviewBody)
+  const buildCompactScheduleRows = (rowsSubset) => rowsSubset.map(item => {
+    const hasEvents = (item.eventsCount || 0) > 0;
+    const safeModelJs = escapeAuditReportText(item.model).replace(/'/g, "\\'");
+    const firstEv = hasEvents && Array.isArray(item.recentEvents) && item.recentEvents[0]
+      ? (item.recentEvents[0].defect || item.recentEvents[0].observations || '')
+      : '';
+    return `
+      <tr class="hover:bg-slate-50/80 ${hasEvents ? 'bg-rose-50/15' : ''}">
+        <td class="px-3.5 py-2.5 whitespace-nowrap">
+          <span class="inline-flex rounded-md border border-teal-200 bg-teal-50 px-2 py-0.5 font-mono text-[10.5px] font-extrabold text-teal-800">${escapeAuditReportText(item.entryDate || '—')}</span>
+        </td>
+        <td class="px-3.5 py-2.5 whitespace-nowrap">${getLinePill(item.line)}</td>
+        <td class="px-3.5 py-2.5 whitespace-nowrap">
+          <button type="button" onclick="window.openModelInSearch('${safeModelJs}')" class="font-mono font-extrabold text-red-600 hover:text-red-700 hover:underline cursor-pointer">
+            ${escapeAuditReportText(item.model)}
+          </button>
+        </td>
+        <td class="px-3.5 py-2.5 font-semibold text-slate-800 whitespace-nowrap">${escapeAuditReportText(item.brand || '—')}</td>
+        <td class="px-3.5 py-2.5 whitespace-nowrap">
+          <span class="font-mono font-bold text-slate-800">${escapeAuditReportText(item.lot || '—')}</span>
+          ${item.qty ? `<span class="ml-1 text-[10.5px] text-slate-500">(${escapeAuditReportText(item.qty)})</span>` : ''}
+        </td>
+        <td class="px-3.5 py-2.5 whitespace-nowrap">
+          <span class="font-mono text-[11px] font-semibold text-slate-700">${escapeAuditReportText(item.opNumber || '—')}</span>
+          ${item.version ? `<span class="ml-1 rounded border border-slate-200 bg-slate-50 px-1 py-0.2 font-mono text-[9.5px] font-bold text-slate-600">V${escapeAuditReportText(item.version)}</span>` : ''}
+        </td>
+        <td class="px-3.5 py-2.5 whitespace-nowrap">
+          <span class="font-mono text-[10.5px] font-bold text-slate-700">${escapeAuditReportText(item.iqcNumber || '—')}</span>
+        </td>
+        <td class="px-3.5 py-2.5">
+          ${hasEvents
+            ? `<button type="button" onclick="window.openModelInSearch('${safeModelJs}')" class="text-left group cursor-pointer">
+                <span class="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-extrabold text-rose-700 group-hover:bg-rose-100">
+                  <span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>⚠️ ${item.eventsCount} evento(s)
+                </span>
+                ${firstEv ? `<span class="block text-[10px] text-slate-500 truncate max-w-[260px] mt-0.5">${escapeAuditReportText(firstEv)}</span>` : ''}
+              </button>`
+            : '<span class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>Sin eventos</span>'
+          }
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  const topRowsHtml = buildCompactScheduleRows(schedule.slice(0, 40));
+  if (iqcBody) iqcBody.innerHTML = topRowsHtml;
+  if (searchPreviewBody) searchPreviewBody.innerHTML = topRowsHtml;
+};
 
 function applyModelSearchPayloadToUi(data) {
   if (!data || !data.models) return;
@@ -9719,7 +9980,7 @@ function applyModelSearchPayloadToUi(data) {
     statusBadge.textContent = `${data.counts?.totalModels || data.modelList.length} modelos`;
   }
   if (countsHint) {
-    countsHint.textContent = `Índice listo: ${data.counts?.certRows || 0} en Certificados (RG-0612) · ${data.counts?.bomModels || 0} en Lista BOM · ${data.counts?.labelRows || 0} en Etiquetas (RG-0631) · ${data.counts?.specRows || 0} en Especificaciones · ${data.counts?.changeRows || 0} en Avisos de Cambio.`;
+    countsHint.textContent = `Índice listo: ${data.counts?.iqcRows || 0} en Ingresos IQC (RG-0154) · ${data.counts?.tvEventsRows || 0} Eventos TV · ${data.counts?.certRows || 0} en Certificados (RG-0612) · ${data.counts?.bomModels || 0} en Lista BOM · ${data.counts?.labelRows || 0} en Etiquetas (RG-0631) · ${data.counts?.specRows || 0} en Especificaciones · ${data.counts?.changeRows || 0} en Avisos de Cambio.`;
   }
   if (warningBox) {
     if (Array.isArray(data.warnings) && data.warnings.length > 0) {
@@ -9730,6 +9991,8 @@ function applyModelSearchPayloadToUi(data) {
       warningBox.innerHTML = '';
     }
   }
+
+  window.renderIncomingModelAlerts(data);
 
   const curQuery = (document.getElementById('modelSearchInput')?.value || '').trim().toUpperCase();
   renderModelSearchSuggestions(curQuery);
@@ -9851,6 +10114,112 @@ function selectModelSearchResult(modelKey) {
     }
     return `<span class="text-[11px] text-slate-400">${escapeAuditReportText(trimmed)}</span>`;
   };
+
+  // 0A. Cronograma de Ingresos a Producción (RG-0154 · Columna H)
+  const iqcCountEl = document.getElementById('modelSearchIqcCount');
+  const iqcBody = document.getElementById('modelSearchIqcTableBody');
+  const iqcSchedule = Array.isArray(entry.iqcSchedule) ? entry.iqcSchedule : [];
+  if (iqcCountEl) iqcCountEl.textContent = `${iqcSchedule.length} ingreso(s)`;
+  if (iqcBody) {
+    if (!iqcSchedule.length) {
+      iqcBody.innerHTML = '<tr><td colspan="9" class="px-4 py-4 text-center text-xs text-slate-400">Sin ingresos programados o registrados en RG-0154 para este modelo.</td></tr>';
+    } else {
+      iqcBody.innerHTML = iqcSchedule.map(row => {
+        const resUpper = String(row.finalResult || '').trim().toUpperCase();
+        const resBadge = !resUpper
+          ? '<span class="text-slate-300">—</span>'
+          : resUpper.includes('PENDIENTE')
+            ? `<span class="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9.5px] font-bold text-amber-800">${escapeAuditReportText(row.finalResult)}</span>`
+            : (resUpper.includes('RECHAZ') || resUpper.includes('NG'))
+              ? `<span class="inline-flex rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[9.5px] font-bold text-rose-700">${escapeAuditReportText(row.finalResult)}</span>`
+              : `<span class="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[9.5px] font-bold text-emerald-700">${escapeAuditReportText(row.finalResult)}</span>`;
+        return `
+          <tr class="hover:bg-slate-50/70">
+            <td class="px-4 py-2.5 whitespace-nowrap">
+              <span class="inline-flex items-center gap-1 rounded-md border border-teal-200 bg-teal-50 px-2 py-0.5 font-mono text-[10.5px] font-extrabold text-teal-800">
+                ${escapeAuditReportText(row.entryDate || '—')}
+              </span>
+            </td>
+            <td class="px-4 py-2.5 whitespace-nowrap">
+              <span class="inline-flex rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 font-mono text-[10px] font-bold text-sky-700">${escapeAuditReportText(row.line || '—')}</span>
+            </td>
+            <td class="px-4 py-2.5 font-mono font-bold text-slate-800 whitespace-nowrap">${escapeAuditReportText(row.lot || '—')}</td>
+            <td class="px-4 py-2.5 font-mono text-slate-700 whitespace-nowrap">${escapeAuditReportText(row.qty || '—')}</td>
+            <td class="px-4 py-2.5 whitespace-nowrap"><span class="inline-flex rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-700">${escapeAuditReportText(row.version || '—')}</span></td>
+            <td class="px-4 py-2.5 font-mono font-semibold text-slate-800 whitespace-nowrap">${escapeAuditReportText(row.opNumber || '—')}</td>
+            <td class="px-4 py-2.5 font-mono text-slate-600 whitespace-nowrap">${escapeAuditReportText(row.poNumber || '—')}</td>
+            <td class="px-4 py-2.5 whitespace-nowrap">
+              <div class="font-mono font-bold text-slate-800">${escapeAuditReportText(row.iqcNumber || '—')}</div>
+              ${row.iqcDate ? `<div class="text-[10px] text-slate-400 font-mono">IQC: ${escapeAuditReportText(row.iqcDate)}</div>` : ''}
+            </td>
+            <td class="px-4 py-2.5 whitespace-nowrap">${resBadge}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+  }
+
+  // 0B. Historial de Eventos del Modelo (Alerta Preventiva Pre-Producción)
+  const eventsCountEl = document.getElementById('modelSearchEventsCount');
+  const eventsBody = document.getElementById('modelSearchEventsTableBody');
+  const tvEvents = Array.isArray(entry.tvEvents) ? entry.tvEvents : [];
+  if (eventsCountEl) {
+    if (tvEvents.length > 0) {
+      eventsCountEl.className = 'rounded-md border border-rose-200 bg-rose-50 px-2 py-0.5 font-mono text-[10px] font-extrabold text-rose-700';
+      eventsCountEl.textContent = `⚠️ ${tvEvents.length} evento(s) previo(s)`;
+    } else {
+      eventsCountEl.className = 'rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-700';
+      eventsCountEl.textContent = '✓ Sin eventos previos';
+    }
+  }
+  if (eventsBody) {
+    if (!tvEvents.length) {
+      eventsBody.innerHTML = '<tr><td colspan="7" class="px-4 py-4 text-center text-xs font-semibold text-emerald-700 bg-emerald-50/40">✓ Este modelo no registra eventos ni reclamos previos en la base de Eventos TV.</td></tr>';
+    } else {
+      eventsBody.innerHTML = tvEvents.map(ev => {
+        const ncLower = String(ev.ncType || '').toLowerCase();
+        const ncBadgeCls = ncLower.includes('proveedor')
+          ? 'border-rose-200 bg-rose-50 text-rose-700'
+          : ncLower.includes('consideracion')
+            ? 'border-sky-200 bg-sky-50 text-sky-700'
+            : 'border-amber-200 bg-amber-50 text-amber-800';
+        const mainProblem = ev.defect || ev.observations || '—';
+        const extraCons = (ev.defect && ev.observations) ? ev.observations : '';
+        const urlsJoined = Array.isArray(ev.urls) ? ev.urls.join(' ') : '';
+        return `
+          <tr class="hover:bg-slate-50/70">
+            <td class="px-4 py-2.5 whitespace-nowrap">
+              <div class="flex items-center gap-1.5">
+                <span class="font-mono font-extrabold text-rose-600">#${escapeAuditReportText(ev.eventNumber || '—')}</span>
+                ${ev.hasMdr ? '<span class="rounded bg-rose-600 px-1 py-0.2 text-[9px] font-black text-white">MDR</span>' : ''}
+              </div>
+              <div class="font-mono text-[10.5px] text-slate-500 mt-0.5">${escapeAuditReportText(ev.date || '—')}</div>
+            </td>
+            <td class="px-4 py-2.5 font-mono font-bold text-slate-800 whitespace-nowrap">${escapeAuditReportText(ev.lot || '—')}</td>
+            <td class="px-4 py-2.5 whitespace-nowrap">
+              <span class="inline-flex rounded-full border ${ncBadgeCls} px-2 py-0.5 text-[10px] font-bold">${escapeAuditReportText(ev.ncType || '—')}</span>
+              ${ev.responsibleArea ? `<div class="text-[10px] text-slate-400 mt-0.5">${escapeAuditReportText(ev.responsibleArea)}</div>` : ''}
+            </td>
+            <td class="px-4 py-2.5 whitespace-nowrap">
+              <div class="font-mono font-bold text-slate-800">${escapeAuditReportText(ev.partNumber || '—')}</div>
+              ${ev.supplier ? `<div class="text-[10px] text-slate-500">${escapeAuditReportText(ev.supplier)}</div>` : ''}
+            </td>
+            <td class="px-4 py-2.5 text-[11px] leading-snug text-slate-800 max-w-[300px]">
+              <div class="font-semibold">${escapeAuditReportText(mainProblem)}</div>
+              ${extraCons ? `<div class="mt-0.5 text-[10px] text-slate-500"><strong>Considerar:</strong> ${escapeAuditReportText(extraCons)}</div>` : ''}
+              ${ev.impact ? `<div class="mt-0.5 text-[10px] text-rose-700 font-medium">Impacto: ${escapeAuditReportText(ev.impact)}</div>` : ''}
+            </td>
+            <td class="px-4 py-2.5 text-[10.5px] leading-snug text-slate-600 max-w-[260px]">
+              ${ev.containmentAction ? `<div><strong class="text-slate-700">Contención:</strong> ${escapeAuditReportText(ev.containmentAction)}</div>` : ''}
+              ${ev.correctiveAction ? `<div class="mt-0.5"><strong class="text-slate-700">Correctiva:</strong> ${escapeAuditReportText(ev.correctiveAction)}</div>` : ''}
+              ${(!ev.containmentAction && !ev.correctiveAction) ? '<span class="text-slate-300">—</span>' : ''}
+            </td>
+            <td class="px-4 py-2.5 text-center whitespace-nowrap">${renderIconLinks(urlsJoined, 'Ver Evidencia Evento #' + (ev.eventNumber || ''), 'red')}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+  }
 
   // 1. Certificados RG-0612
   const certBody = document.getElementById('modelSearchCertTableBody');

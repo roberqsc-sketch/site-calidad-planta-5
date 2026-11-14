@@ -3170,17 +3170,39 @@ def _download_csv_rows_optional(url):
     return list(csv.reader(io.StringIO(content, newline='')))
 
 
+def _parse_iqc_entry_date_iso(raw_val):
+    val = str(raw_val or '').strip()
+    if not val:
+        return '', 0
+    for fmt in ('%d/%m/%Y', '%d-%m-%Y', '%d/%m/%y', '%d-%m-%y', '%Y-%m-%d'):
+        try:
+            dt = datetime.datetime.strptime(val, fmt)
+            if dt.year < 2000 or dt.year > 2100:
+                continue
+            return dt.strftime('%Y-%m-%d'), int(dt.strftime('%Y%m%d'))
+        except (ValueError, OSError):
+            pass
+    parsed_dt = parse_scanner_sheet_datetime(val)
+    if parsed_dt and 2000 <= parsed_dt.year <= 2100:
+        try:
+            return parsed_dt.strftime('%Y-%m-%d'), int(parsed_dt.strftime('%Y%m%d'))
+        except (ValueError, OSError):
+            pass
+    return '', 0
+
+
 def _build_model_search_payload():
     sources = {
         'bom': MODEL_SEARCH_BOM_CSV_URL,
         'cert': MODEL_SEARCH_CERT_CSV_URL,
         'spec': MODEL_SEARCH_SPEC_CSV_URL,
         'labels': MODEL_SEARCH_LABELS_CSV_URL,
-        'changes': MODEL_SEARCH_CHANGES_CSV_URL
+        'changes': MODEL_SEARCH_CHANGES_CSV_URL,
+        'iqc': IQC_MODEL_BRANDS_CSV_URL
     }
     raw_rows = {}
     warnings = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
         futures = {key: executor.submit(_download_csv_rows_optional, url) for key, url in sources.items()}
         for key, future in futures.items():
             try:
@@ -3194,6 +3216,8 @@ def _build_model_search_payload():
                     )
                 elif key == 'changes':
                     warnings.append(f'No se pudo leer Avisos de cambio (HTTP {err.code}).')
+                elif key == 'iqc':
+                    warnings.append(f'No se pudo leer RG-0154 Registro de IQC (HTTP {err.code}).')
                 else:
                     warnings.append(f'No se pudo leer RG-0612 Certificados (HTTP {err.code}).')
             except Exception as err:
@@ -3213,7 +3237,9 @@ def _build_model_search_payload():
                 'certificates': [],
                 'specifications': [],
                 'printedLabels': [],
-                'changeNotices': []
+                'changeNotices': [],
+                'iqcSchedule': [],
+                'tvEvents': []
             }
         return models[key]
 
@@ -3347,19 +3373,117 @@ def _build_model_search_payload():
             })
             change_rows_count += 1
 
+    # 6. Eventos TV históricos por modelo (Reclamos a Automática / Eventos TV)
+    try:
+        tv_events_all = load_tv_events_records(force_refresh=False)
+    except Exception:
+        tv_events_all = []
+    tv_events_count = 0
+    for ev in tv_events_all:
+        m_raw = str(ev.get('model') or '').strip()
+        if not m_raw:
+            continue
+        entry = ensure_model(m_raw)
+        if not entry:
+            continue
+        entry['tvEvents'].append({
+            'eventNumber': str(ev.get('eventNumber') or '').strip(),
+            'date': str(ev.get('date') or '').strip(),
+            'sortTimestamp': int(ev.get('sortTimestamp') or 0),
+            'model': m_raw.upper(),
+            'supplier': str(ev.get('supplier') or '').strip(),
+            'chassis': str(ev.get('chassis') or '').strip(),
+            'lot': str(ev.get('lot') or '').strip(),
+            'ncType': str(ev.get('ncType') or '').strip(),
+            'partNumber': str(ev.get('partNumber') or '').strip(),
+            'defect': str(ev.get('defect') or '').strip(),
+            'responsibleArea': str(ev.get('responsibleArea') or '').strip(),
+            'impact': str(ev.get('impact') or '').strip(),
+            'containmentAction': str(ev.get('containmentAction') or '').strip(),
+            'correctiveAction': str(ev.get('correctiveAction') or '').strip(),
+            'observations': str(ev.get('observations') or '').strip(),
+            'urls': ev.get('urls') or [],
+            'hasMdr': bool(ev.get('hasMdr'))
+        })
+        tv_events_count += 1
+
+    for entry in models.values():
+        if entry['tvEvents']:
+            entry['tvEvents'].sort(key=lambda x: x.get('sortTimestamp', 0), reverse=True)
+
+    # 7. Cronograma de Ingresos IQC (RG-0154): Col A=#IQC, B=Fecha IQC, C=Línea, D=Modelo, E=Marca, F=Lote, G=Cant x Lt, H=Fecha Ingreso/Producción, I=#PO, J=Versión, K=#OP, N=Resultado Final
+    iqc_rows = raw_rows.get('iqc', [])
+    iqc_rows_count = 0
+    incoming_schedule = []
+    if iqc_rows:
+        start_idx = 4
+        for idx, row in enumerate(iqc_rows[:10]):
+            if len(row) > 3 and str(row[3] or '').strip().casefold() == 'modelo':
+                start_idx = idx + 1
+                break
+        for row_idx, row in enumerate(iqc_rows[start_idx:], start=start_idx + 1):
+            if len(row) < 4 or not str(row[3] or '').strip():
+                continue
+            model_raw = str(row[3] or '').strip()
+            if model_raw.casefold() == 'modelo':
+                continue
+            entry = ensure_model(model_raw)
+            if not entry:
+                continue
+            entry_date_raw = str(row[7] if len(row) > 7 else '').strip()
+            entry_date_iso, entry_ts = _parse_iqc_entry_date_iso(entry_date_raw)
+            iqc_date_raw = str(row[1] if len(row) > 1 else '').strip()
+            iqc_item = {
+                'rowNumber': row_idx,
+                'iqcNumber': str(row[0] if len(row) > 0 else '').strip(),
+                'iqcDate': iqc_date_raw,
+                'line': str(row[2] if len(row) > 2 else '').strip(),
+                'model': entry['model'],
+                'brand': str(row[4] if len(row) > 4 else '').strip(),
+                'lot': str(row[5] if len(row) > 5 else '').strip(),
+                'qty': str(row[6] if len(row) > 6 else '').strip(),
+                'entryDate': entry_date_raw,
+                'entryDateIso': entry_date_iso,
+                'entryTimestamp': entry_ts,
+                'poNumber': str(row[8] if len(row) > 8 else '').strip(),
+                'version': str(row[9] if len(row) > 9 else '').strip(),
+                'opNumber': str(row[10] if len(row) > 10 else '').strip(),
+                'finalResult': str(row[13] if len(row) > 13 else '').strip(),
+                'inspector': str(row[14] if len(row) > 14 else '').strip(),
+                'observations': str(row[15] if len(row) > 15 else '').strip()
+            }
+            entry['iqcSchedule'].append(iqc_item)
+            iqc_rows_count += 1
+            if entry_date_raw:
+                incoming_schedule.append({
+                    **iqc_item,
+                    'eventsCount': len(entry['tvEvents']),
+                    'mdrEventsCount': sum(1 for e in entry['tvEvents'] if e.get('hasMdr')),
+                    'recentEvents': entry['tvEvents'][:5]
+                })
+
+    for entry in models.values():
+        if entry['iqcSchedule']:
+            entry['iqcSchedule'].sort(key=lambda x: (x.get('entryTimestamp', 0), x.get('rowNumber', 0)), reverse=True)
+
+    incoming_schedule.sort(key=lambda x: (x.get('entryTimestamp', 0), x.get('rowNumber', 0)), reverse=True)
+
     loaded_at = int(time.time())
     payload_bytes = json.dumps({
         'success': True,
         'fetchedAt': loaded_at,
         'models': models,
         'modelList': sorted(models.keys()),
+        'incomingSchedule': incoming_schedule[:120],
         'counts': {
             'totalModels': len(models),
             'bomModels': bom_models_count,
             'certRows': cert_models_count,
             'specRows': spec_rows_count,
             'labelRows': label_rows_count,
-            'changeRows': change_rows_count
+            'changeRows': change_rows_count,
+            'iqcRows': iqc_rows_count,
+            'tvEventsRows': tv_events_count
         },
         'warnings': warnings
     }, ensure_ascii=False).encode('utf-8')
