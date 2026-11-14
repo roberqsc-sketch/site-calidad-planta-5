@@ -3263,7 +3263,7 @@ def _build_model_search_payload():
             })
             cert_models_count += 1
 
-    # 3. Especificaciones (Prueba): Col B=Modelo, C=Material, D=Part Number, E=Descripcion, F=Version, G=Spec Arte, H=Spec Plano
+    # 3. Especificaciones (Prueba): Col B=Modelo, C=Material, D=Part Number, E=Descripcion, F=Version, G=Spec Arte, H=Spec Plano, I=Estado
     spec_rows = raw_rows.get('spec', [])
     spec_rows_count = 0
     if spec_rows:
@@ -3285,7 +3285,8 @@ def _build_model_search_payload():
                 'description': str(row[4] if len(row) > 4 else '').strip(),
                 'version': str(row[5] if len(row) > 5 else '').strip(),
                 'specArteUrl': str(row[6] if len(row) > 6 else '').strip(),
-                'specPlanoUrl': str(row[7] if len(row) > 7 else '').strip()
+                'specPlanoUrl': str(row[7] if len(row) > 7 else '').strip(),
+                'status': str(row[8] if len(row) > 8 else '').strip()
             })
             spec_rows_count += 1
 

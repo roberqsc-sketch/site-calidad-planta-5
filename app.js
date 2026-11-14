@@ -9644,6 +9644,7 @@ window.initModelSearchView = function() {
     modelSearchInitialized = true;
     const input = document.getElementById('modelSearchInput');
     const clearBtn = document.getElementById('modelSearchClearBtn');
+    const specStatusFilter = document.getElementById('modelSearchSpecStatusFilter');
     const specVerFilter = document.getElementById('modelSearchSpecVersionFilter');
     const specTextFilter = document.getElementById('modelSearchSpecTextFilter');
 
@@ -9666,7 +9667,6 @@ window.initModelSearchView = function() {
 
     if (input) {
       input.addEventListener('input', handleInstantModelInput);
-      input.addEventListener('change', handleInstantModelInput);
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
@@ -9695,6 +9695,7 @@ window.initModelSearchView = function() {
       });
     }
 
+    specStatusFilter?.addEventListener('change', () => renderModelSearchSpecifications());
     specVerFilter?.addEventListener('change', () => renderModelSearchSpecifications());
     specTextFilter?.addEventListener('input', () => renderModelSearchSpecifications());
   }
@@ -9704,7 +9705,7 @@ window.initModelSearchView = function() {
   }
 };
 
-const MODEL_SEARCH_STORAGE_KEY = 'calidad_planta5_model_search_cache_v1';
+const MODEL_SEARCH_STORAGE_KEY = 'calidad_planta5_model_search_cache_v2';
 
 function applyModelSearchPayloadToUi(data) {
   if (!data || !data.models) return;
@@ -9713,11 +9714,7 @@ function applyModelSearchPayloadToUi(data) {
   const statusBadge = document.getElementById('modelSearchStatusBadge');
   const warningBox = document.getElementById('modelSearchWarning');
   const countsHint = document.getElementById('modelSearchCountsHint');
-  const datalist = document.getElementById('modelSearchDatalist');
 
-  if (datalist) {
-    datalist.innerHTML = data.modelList.map(m => `<option value="${escapeAuditReportText(m)}"></option>`).join('');
-  }
   if (statusBadge) {
     statusBadge.textContent = `${data.counts?.totalModels || data.modelList.length} modelos`;
   }
@@ -9903,9 +9900,15 @@ function selectModelSearchResult(modelKey) {
   }
 
   // 3. Especificaciones
+  const specStatusSelect = document.getElementById('modelSearchSpecStatusFilter');
   const specVerSelect = document.getElementById('modelSearchSpecVersionFilter');
   const specTextInput = document.getElementById('modelSearchSpecTextFilter');
   if (specTextInput) specTextInput.value = '';
+  if (specStatusSelect) {
+    const uniqueStatuses = Array.from(new Set(entry.specifications.map(s => (s.status || '').trim()).filter(Boolean)));
+    specStatusSelect.innerHTML = '<option value="">Todos los estados</option>' +
+      uniqueStatuses.map(st => `<option value="${escapeAuditReportText(st)}">${escapeAuditReportText(st)}</option>`).join('');
+  }
   if (specVerSelect) {
     const uniqueVersions = Array.from(new Set(entry.specifications.map(s => s.version).filter(Boolean)));
     specVerSelect.innerHTML = '<option value="">Todas las versiones</option>' +
@@ -9915,18 +9918,41 @@ function selectModelSearchResult(modelKey) {
   renderModelSearchSuggestions((document.getElementById('modelSearchInput')?.value || '').trim().toUpperCase());
 }
 
+function getModelSearchStatusBadge(rawStatus) {
+  const status = String(rawStatus || '').trim();
+  if (!status) {
+    return '<span class="text-[11px] text-slate-300">—</span>';
+  }
+  const lower = status.toLowerCase();
+  if (lower.includes('no vigente')) {
+    return `<span class="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-700"><span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span>${escapeAuditReportText(status)}</span>`;
+  }
+  if (lower.includes('vigente')) {
+    return `<span class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>${escapeAuditReportText(status)}</span>`;
+  }
+  if (lower.includes('nuevo')) {
+    return `<span class="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700"><span class="h-1.5 w-1.5 rounded-full bg-sky-500"></span>${escapeAuditReportText(status)}</span>`;
+  }
+  if (lower.includes('sustituto')) {
+    return `<span class="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800"><span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>${escapeAuditReportText(status)}</span>`;
+  }
+  return `<span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-600">${escapeAuditReportText(status)}</span>`;
+}
+
 function renderModelSearchSpecifications() {
   const tbody = document.getElementById('modelSearchSpecTableBody');
   const countEl = document.getElementById('modelSearchSpecCount');
+  const statusFilter = document.getElementById('modelSearchSpecStatusFilter')?.value || '';
   const verFilter = document.getElementById('modelSearchSpecVersionFilter')?.value || '';
   const textFilter = (document.getElementById('modelSearchSpecTextFilter')?.value || '').trim().toLowerCase();
   const entry = modelSearchPayload?.models?.[modelSearchSelectedKey];
   if (!tbody || !entry) return;
 
   const filtered = entry.specifications.filter(s => {
+    if (statusFilter && (s.status || '').trim() !== statusFilter) return false;
     if (verFilter && s.version !== verFilter) return false;
     if (textFilter) {
-      const hay = `${s.material} ${s.partNumber} ${s.description}`.toLowerCase();
+      const hay = `${s.material} ${s.partNumber} ${s.description} ${s.status || ''}`.toLowerCase();
       if (!hay.includes(textFilter)) return false;
     }
     return true;
@@ -9934,7 +9960,7 @@ function renderModelSearchSpecifications() {
 
   if (countEl) countEl.textContent = `${filtered.length} ítem(s)`;
   if (!filtered.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-xs text-slate-400">No hay especificaciones cargadas para este filtro.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-6 text-center text-xs text-slate-400">No hay especificaciones cargadas para este filtro.</td></tr>';
     return;
   }
 
@@ -9965,6 +9991,7 @@ function renderModelSearchSpecifications() {
         ${s.description ? `<div class="text-[10.5px] text-slate-500 mt-0.5 leading-snug">${escapeAuditReportText(s.description)}</div>` : ''}
       </td>
       <td class="px-4 py-2 whitespace-nowrap"><span class="inline-flex rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-600">${escapeAuditReportText(s.version || '—')}</span></td>
+      <td class="px-4 py-2 whitespace-nowrap">${getModelSearchStatusBadge(s.status)}</td>
       <td class="px-4 py-2 text-center whitespace-nowrap">${renderLinkCell(s.specArteUrl, 'Spec Arte', 'violet')}</td>
       <td class="px-4 py-2 text-center whitespace-nowrap">${renderLinkCell(s.specPlanoUrl, 'Spec Plano', 'sky')}</td>
     </tr>
