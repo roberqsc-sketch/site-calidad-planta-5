@@ -116,6 +116,8 @@ AUDIT_SHEETS_CACHE_TTL_SECONDS = 15
 MODEL_SEARCH_BOM_CSV_URL = 'https://docs.google.com/spreadsheets/d/1c1VBZkx5XPPFcltxgOO2g2E7GKR7tgmy0xX3L67LQ34/export?format=csv&gid=13176987'
 MODEL_SEARCH_CERT_CSV_URL = 'https://docs.google.com/spreadsheets/d/1Po2A4T_9hW8rFi2huMiCzH9Sh7cayHBEa6SNMmJtGAw/export?format=csv&gid=1460550420'
 MODEL_SEARCH_SPEC_CSV_URL = 'https://docs.google.com/spreadsheets/d/1c1VBZkx5XPPFcltxgOO2g2E7GKR7tgmy0xX3L67LQ34/export?format=csv&gid=853792234'
+MODEL_SEARCH_LABELS_CSV_URL = 'https://docs.google.com/spreadsheets/d/1c1VBZkx5XPPFcltxgOO2g2E7GKR7tgmy0xX3L67LQ34/export?format=csv&gid=1361335330'
+MODEL_SEARCH_CHANGES_CSV_URL = 'https://docs.google.com/spreadsheets/d/19WY5aWod3vVmWVTsIcyHCNyw88etBxFO7vTSdg0QgNY/export?format=csv&gid=1836912019'
 MODEL_SEARCH_CACHE_LOCK = threading.Lock()
 MODEL_SEARCH_REFRESH_LOCK = threading.Lock()
 MODEL_SEARCH_REFRESHING = threading.Event()
@@ -1207,8 +1209,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_audit_sheets_data()
             return
         if path == '/api/model-search':
-            if not self.get_authenticated_user():
-                return
             self.send_model_search_data()
             return
         if path == '/api/audits/not-applicable':
@@ -3174,22 +3174,26 @@ def _build_model_search_payload():
     sources = {
         'bom': MODEL_SEARCH_BOM_CSV_URL,
         'cert': MODEL_SEARCH_CERT_CSV_URL,
-        'spec': MODEL_SEARCH_SPEC_CSV_URL
+        'spec': MODEL_SEARCH_SPEC_CSV_URL,
+        'labels': MODEL_SEARCH_LABELS_CSV_URL,
+        'changes': MODEL_SEARCH_CHANGES_CSV_URL
     }
     raw_rows = {}
     warnings = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         futures = {key: executor.submit(_download_csv_rows_optional, url) for key, url in sources.items()}
         for key, future in futures.items():
             try:
                 raw_rows[key] = future.result()
             except urllib.error.HTTPError as err:
                 raw_rows[key] = []
-                if key in ('bom', 'spec'):
+                if key in ('bom', 'spec', 'labels'):
                     warnings.append(
                         f'La planilla Matriz IQC ({key.upper()}) devolvió HTTP {err.code}. '
                         'Verificá que esté compartida como "Cualquier persona con el vínculo (Lector)".'
                     )
+                elif key == 'changes':
+                    warnings.append(f'No se pudo leer Avisos de cambio (HTTP {err.code}).')
                 else:
                     warnings.append(f'No se pudo leer RG-0612 Certificados (HTTP {err.code}).')
             except Exception as err:
@@ -3207,7 +3211,9 @@ def _build_model_search_payload():
                 'model': key,
                 'bomVersions': [],
                 'certificates': [],
-                'specifications': []
+                'specifications': [],
+                'printedLabels': [],
+                'changeNotices': []
             }
         return models[key]
 
@@ -3290,6 +3296,57 @@ def _build_model_search_payload():
             })
             spec_rows_count += 1
 
+    # 4. Validación de etiquetas impresas (DATA RG-0631): Col A=Modelo, C=Marca, D=Planta, G=Tipo de etiqueta, H=Estado, I=URL, J=Observaciones
+    label_rows = raw_rows.get('labels', [])
+    label_rows_count = 0
+    if label_rows:
+        for row in label_rows[1:]:
+            if not row or not str(row[0] or '').strip():
+                continue
+            model_raw = str(row[0] or '').strip()
+            if model_raw.casefold() == 'modelo':
+                continue
+            entry = ensure_model(model_raw)
+            if not entry:
+                continue
+            entry['printedLabels'].append({
+                'model': model_raw,
+                'date': str(row[1] if len(row) > 1 else '').strip(),
+                'brand': str(row[2] if len(row) > 2 else '').strip(),
+                'plant': str(row[3] if len(row) > 3 else '').strip(),
+                'labelType': str(row[6] if len(row) > 6 else '').strip(),
+                'status': str(row[7] if len(row) > 7 else '').strip(),
+                'url': str(row[8] if len(row) > 8 else '').strip(),
+                'observations': str(row[9] if len(row) > 9 else '').strip()
+            })
+            label_rows_count += 1
+
+    # 5. Avisos de cambio (Actividades IQC UP5): Col A=Modelo, B=AC NRO, C=Acción, D=Marca, F=Código, G=Descripción, K=Vigencia, L=Fecha, M=Alterno
+    change_rows = raw_rows.get('changes', [])
+    change_rows_count = 0
+    if change_rows:
+        for row in change_rows[1:]:
+            if not row or not str(row[0] or '').strip():
+                continue
+            model_raw = str(row[0] or '').strip()
+            if model_raw.casefold() == 'modelo':
+                continue
+            entry = ensure_model(model_raw)
+            if not entry:
+                continue
+            entry['changeNotices'].append({
+                'model': model_raw,
+                'acNumber': str(row[1] if len(row) > 1 else '').strip(),
+                'action': str(row[2] if len(row) > 2 else '').strip(),
+                'brand': str(row[3] if len(row) > 3 else '').strip(),
+                'code': str(row[5] if len(row) > 5 else '').strip(),
+                'description': str(row[6] if len(row) > 6 else '').strip(),
+                'validity': str(row[10] if len(row) > 10 else '').strip(),
+                'date': str(row[11] if len(row) > 11 else '').strip(),
+                'alternate': str(row[12] if len(row) > 12 else '').strip()
+            })
+            change_rows_count += 1
+
     loaded_at = int(time.time())
     payload_bytes = json.dumps({
         'success': True,
@@ -3300,7 +3357,9 @@ def _build_model_search_payload():
             'totalModels': len(models),
             'bomModels': bom_models_count,
             'certRows': cert_models_count,
-            'specRows': spec_rows_count
+            'specRows': spec_rows_count,
+            'labelRows': label_rows_count,
+            'changeRows': change_rows_count
         },
         'warnings': warnings
     }, ensure_ascii=False).encode('utf-8')

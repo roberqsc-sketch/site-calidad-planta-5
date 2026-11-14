@@ -2637,7 +2637,7 @@
 
             <div class="p-5 sm:p-6">
               <div id="modelSearchEmptyState" class="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 py-10 px-4 text-center">
-                <p class="text-xs font-semibold text-slate-600">Escribí un código de modelo arriba para consultar Certificados (RG-0612), Lista BOM y Especificaciones.</p>
+                <p class="text-xs font-semibold text-slate-600">Escribí un código de modelo arriba para consultar Certificados (RG-0612), Lista BOM, Validación de Etiquetas Impresas, Especificaciones y Avisos de Cambio.</p>
               </div>
 
               <!-- Resultados minimalistas con paleta de colores del sitio -->
@@ -2686,7 +2686,33 @@
                   </div>
                 </section>
 
-                <!-- 3. Especificaciones de Materiales (acento Violeta / Índigo) -->
+                <!-- 3. Validación de Etiquetas Impresas (DATA RG-0631 · acento Cyan) -->
+                <section class="space-y-2">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <span class="h-2 w-2 rounded-full bg-cyan-500"></span>
+                      <h3 class="text-[11px] font-extrabold uppercase tracking-wider text-slate-800">Validación de Etiquetas Impresas</h3>
+                      <span class="rounded-md border border-cyan-200 bg-cyan-50 px-1.5 py-0.5 font-mono text-[9.5px] font-bold text-cyan-700">RG-0631</span>
+                      <span id="modelSearchLabelsCount" class="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[9.5px] font-bold text-slate-600">0 etiquetas</span>
+                    </div>
+                  </div>
+                  <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                    <table class="w-full min-w-[600px] text-left text-xs">
+                      <thead class="border-b border-slate-100 bg-slate-50/70 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        <tr>
+                          <th class="px-4 py-2.5">Modelo</th>
+                          <th class="px-4 py-2.5">Marca</th>
+                          <th class="px-4 py-2.5">Planta</th>
+                          <th class="px-4 py-2.5">Tipo de Etiqueta</th>
+                          <th class="px-4 py-2.5 text-center">URL</th>
+                        </tr>
+                      </thead>
+                      <tbody id="modelSearchLabelsTableBody" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <!-- 4. Especificaciones de Materiales (acento Violeta / Índigo) -->
                 <section class="space-y-2">
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <div class="flex flex-wrap items-center gap-2">
@@ -2727,6 +2753,33 @@
                         </tr>
                       </thead>
                       <tbody id="modelSearchSpecTableBody" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <!-- 5. Avisos de Cambio (Actividades IQC UP5 · acento Ámbar) -->
+                <section class="space-y-2">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <span class="h-2 w-2 rounded-full bg-amber-500"></span>
+                      <h3 class="text-[11px] font-extrabold uppercase tracking-wider text-slate-800">Avisos de Cambio</h3>
+                      <span id="modelSearchChangesCount" class="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 font-mono text-[9.5px] font-bold text-amber-800">0 avisos</span>
+                    </div>
+                  </div>
+                  <div class="max-h-[380px] overflow-auto rounded-xl border border-slate-200 bg-white">
+                    <table class="w-full min-w-[760px] text-left text-xs">
+                      <thead class="sticky top-0 z-10 border-b border-slate-100 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                        <tr>
+                          <th class="px-4 py-2.5">Modelo</th>
+                          <th class="px-4 py-2.5">Marca</th>
+                          <th class="px-4 py-2.5">Código</th>
+                          <th class="px-4 py-2.5">Descripción</th>
+                          <th class="px-4 py-2.5">Vigencia</th>
+                          <th class="px-4 py-2.5">Fecha</th>
+                          <th class="px-4 py-2.5 text-center">Alterno</th>
+                        </tr>
+                      </thead>
+                      <tbody id="modelSearchChangesTableBody" class="divide-y divide-slate-100"></tbody>
                     </table>
                   </div>
                 </section>

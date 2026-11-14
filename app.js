@@ -9705,7 +9705,7 @@ window.initModelSearchView = function() {
   }
 };
 
-const MODEL_SEARCH_STORAGE_KEY = 'calidad_planta5_model_search_cache_v2';
+const MODEL_SEARCH_STORAGE_KEY = 'calidad_planta5_model_search_cache_v3';
 
 function applyModelSearchPayloadToUi(data) {
   if (!data || !data.models) return;
@@ -9719,7 +9719,7 @@ function applyModelSearchPayloadToUi(data) {
     statusBadge.textContent = `${data.counts?.totalModels || data.modelList.length} modelos`;
   }
   if (countsHint) {
-    countsHint.textContent = `Índice listo: ${data.counts?.certRows || 0} en Certificados (RG-0612) · ${data.counts?.bomModels || 0} en Lista BOM · ${data.counts?.specRows || 0} ítems de Especificaciones.`;
+    countsHint.textContent = `Índice listo: ${data.counts?.certRows || 0} en Certificados (RG-0612) · ${data.counts?.bomModels || 0} en Lista BOM · ${data.counts?.labelRows || 0} en Etiquetas (RG-0631) · ${data.counts?.specRows || 0} en Especificaciones · ${data.counts?.changeRows || 0} en Avisos de Cambio.`;
   }
   if (warningBox) {
     if (Array.isArray(data.warnings) && data.warnings.length > 0) {
@@ -9835,7 +9835,9 @@ function selectModelSearchResult(modelKey) {
       red: 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100 hover:border-red-300',
       emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:border-emerald-300',
       sky: 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 hover:border-sky-300',
-      violet: 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300'
+      cyan: 'border-cyan-200 bg-cyan-50 text-cyan-700 hover:bg-cyan-100 hover:border-cyan-300',
+      violet: 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 hover:border-violet-300',
+      amber: 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:border-amber-300'
     };
     const badgeCls = toneMap[tone] || toneMap.red;
     if (urls.length > 0) {
@@ -9899,7 +9901,30 @@ function selectModelSearchResult(modelKey) {
     }
   }
 
-  // 3. Especificaciones
+  // 3. Validación de Etiquetas Impresas (DATA RG-0631: Col A=Modelo, C=Marca, D=Planta, G=Tipo de Etiqueta, I=URL)
+  const labelsCountEl = document.getElementById('modelSearchLabelsCount');
+  const labelsBody = document.getElementById('modelSearchLabelsTableBody');
+  const printedLabels = Array.isArray(entry.printedLabels) ? entry.printedLabels : [];
+  if (labelsCountEl) labelsCountEl.textContent = `${printedLabels.length} etiqueta(s)`;
+  if (labelsBody) {
+    if (!printedLabels.length) {
+      labelsBody.innerHTML = '<tr><td colspan="5" class="px-4 py-4 text-center text-xs text-slate-400">Sin registros de validación de etiquetas impresas para este modelo.</td></tr>';
+    } else {
+      labelsBody.innerHTML = printedLabels.map(lbl => `
+        <tr class="hover:bg-slate-50/70">
+          <td class="px-4 py-2.5 font-mono font-bold text-red-600 whitespace-nowrap">${escapeAuditReportText(lbl.model || entry.model)}</td>
+          <td class="px-4 py-2.5 font-semibold text-slate-800 whitespace-nowrap">${escapeAuditReportText(lbl.brand || '—')}</td>
+          <td class="px-4 py-2.5 text-slate-600 whitespace-nowrap">${escapeAuditReportText(lbl.plant || '—')}</td>
+          <td class="px-4 py-2.5 whitespace-nowrap">
+            <span class="inline-flex rounded-md border border-cyan-200 bg-cyan-50 px-2 py-0.5 font-mono text-[10px] font-bold text-cyan-700">${escapeAuditReportText(lbl.labelType || '—')}</span>
+          </td>
+          <td class="px-4 py-2.5 text-center whitespace-nowrap">${renderIconLinks(lbl.url, 'Abrir Etiqueta ' + (lbl.labelType || ''), 'cyan')}</td>
+        </tr>
+      `).join('');
+    }
+  }
+
+  // 4. Especificaciones
   const specStatusSelect = document.getElementById('modelSearchSpecStatusFilter');
   const specVerSelect = document.getElementById('modelSearchSpecVersionFilter');
   const specTextInput = document.getElementById('modelSearchSpecTextFilter');
@@ -9913,6 +9938,30 @@ function selectModelSearchResult(modelKey) {
       uniqueVersions.map(v => `<option value="${escapeAuditReportText(v)}">${escapeAuditReportText(v)}</option>`).join('');
   }
   renderModelSearchSpecifications();
+
+  // 5. Avisos de Cambio (Actividades IQC UP5: Col A=Modelo, D=Marca, F=Código, G=Descripción, K=Vigencia, L=Fecha, M=Alterno)
+  const changesCountEl = document.getElementById('modelSearchChangesCount');
+  const changesBody = document.getElementById('modelSearchChangesTableBody');
+  const changeNotices = Array.isArray(entry.changeNotices) ? entry.changeNotices : [];
+  if (changesCountEl) changesCountEl.textContent = `${changeNotices.length} aviso(s)`;
+  if (changesBody) {
+    if (!changeNotices.length) {
+      changesBody.innerHTML = '<tr><td colspan="7" class="px-4 py-4 text-center text-xs text-slate-400">Sin avisos de cambio registrados para este modelo.</td></tr>';
+    } else {
+      changesBody.innerHTML = changeNotices.map(ch => `
+        <tr class="hover:bg-slate-50/70">
+          <td class="px-4 py-2 font-mono font-bold text-red-600 whitespace-nowrap">${escapeAuditReportText(ch.model || entry.model)}</td>
+          <td class="px-4 py-2 font-semibold text-slate-800 whitespace-nowrap">${escapeAuditReportText(ch.brand || '—')}</td>
+          <td class="px-4 py-2 font-mono font-bold text-slate-800 whitespace-nowrap">${escapeAuditReportText(ch.code || '—')}</td>
+          <td class="px-4 py-2 text-slate-600 text-[11px] leading-snug">${escapeAuditReportText(ch.description || '—')}</td>
+          <td class="px-4 py-2 whitespace-nowrap"><span class="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800">${escapeAuditReportText(ch.validity || '—')}</span></td>
+          <td class="px-4 py-2 font-mono text-slate-600 whitespace-nowrap">${escapeAuditReportText(ch.date || '—')}</td>
+          <td class="px-4 py-2 text-center whitespace-nowrap"><span class="inline-flex rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-700">${escapeAuditReportText(ch.alternate || '—')}</span></td>
+        </tr>
+      `).join('');
+    }
+  }
+
   renderModelSearchSuggestions((document.getElementById('modelSearchInput')?.value || '').trim().toUpperCase());
 }
 
