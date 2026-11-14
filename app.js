@@ -9905,9 +9905,7 @@ function selectModelSearchResult(modelKey) {
   const specTextInput = document.getElementById('modelSearchSpecTextFilter');
   if (specTextInput) specTextInput.value = '';
   if (specStatusSelect) {
-    const uniqueStatuses = Array.from(new Set(entry.specifications.map(s => (s.status || '').trim()).filter(Boolean)));
-    specStatusSelect.innerHTML = '<option value="">Todos los estados</option>' +
-      uniqueStatuses.map(st => `<option value="${escapeAuditReportText(st)}">${escapeAuditReportText(st)}</option>`).join('');
+    specStatusSelect.value = '';
   }
   if (specVerSelect) {
     const uniqueVersions = Array.from(new Set(entry.specifications.map(s => s.version).filter(Boolean)));
@@ -9942,14 +9940,14 @@ function getModelSearchStatusBadge(rawStatus) {
 function renderModelSearchSpecifications() {
   const tbody = document.getElementById('modelSearchSpecTableBody');
   const countEl = document.getElementById('modelSearchSpecCount');
-  const statusFilter = document.getElementById('modelSearchSpecStatusFilter')?.value || '';
+  const statusFilter = (document.getElementById('modelSearchSpecStatusFilter')?.value || '').trim().toLowerCase();
   const verFilter = document.getElementById('modelSearchSpecVersionFilter')?.value || '';
   const textFilter = (document.getElementById('modelSearchSpecTextFilter')?.value || '').trim().toLowerCase();
   const entry = modelSearchPayload?.models?.[modelSearchSelectedKey];
   if (!tbody || !entry) return;
 
   const filtered = entry.specifications.filter(s => {
-    if (statusFilter && (s.status || '').trim() !== statusFilter) return false;
+    if (statusFilter && (s.status || '').trim().toLowerCase() !== statusFilter) return false;
     if (verFilter && s.version !== verFilter) return false;
     if (textFilter) {
       const hay = `${s.material} ${s.partNumber} ${s.description} ${s.status || ''}`.toLowerCase();
